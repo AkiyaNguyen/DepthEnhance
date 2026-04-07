@@ -52,7 +52,7 @@ Trainer:
   prototype_warmup_iter: 3000.0
   prototype_rampup_length: 2000.0
   prototype_balance_weight: 0.5
-  prototype_loss_weight: 1.0
+  prototype_loss_weight: 0.5
 
 Hook:
   MeanTeacherEvalHook:

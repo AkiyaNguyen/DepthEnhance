@@ -256,7 +256,7 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
         # ========== PHASE 2: Train Teacher (DAv2 fusion/decoder), freeze rgb_encoder ==========
         for _, data in enumerate(self.train_dataloader):
             self.tea_optimizer.zero_grad()
-            img, label = data['image'], data['label']
+            img, label, img_s = data['image'], data['label'], data['image_s']
             img, label = img.to(device), label.to(device)
 
             labeled_img = img[:self.labeled_bs]
@@ -268,16 +268,17 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
             tea_labeled_rgbd_output = self.tea_model(labeled_img)
             loss_tea_sup = self.class_criterion(tea_labeled_rgbd_output, label)
 
-            tea_unlabeled_rgbd_output = self.tea_model(unlabeled_img)
+            unlabeled_img_s = img_s[self.labeled_bs:]
+            tea_unlabeled_rgbd_output = self.tea_model(unlabeled_img_s)
             with torch.no_grad():
-                stu_unlabeled_rgbd_output = self.stu_model(unlabeled_img)
+                stu_unlabeled_output = self.stu_model(unlabeled_img)
             st = self.student_reliable_threshold
             tea_learn_from_stu_mask = (
-                ((stu_unlabeled_rgbd_output > st) & (tea_unlabeled_rgbd_output > 0.5))
-                | ((stu_unlabeled_rgbd_output < 1 - st) & (tea_unlabeled_rgbd_output < 0.5))
+                ((stu_unlabeled_output > st) & (tea_unlabeled_rgbd_output > 0.5))
+                | ((stu_unlabeled_output < 1 - st) & (tea_unlabeled_rgbd_output < 0.5))
             ).float()
 
-            round_stu_target = (stu_unlabeled_rgbd_output > st).float()
+            round_stu_target = (stu_unlabeled_output > st).float()
             depth_learn_from_stu_loss = self.tea_learn_from_stu_criterion(tea_unlabeled_rgbd_output, round_stu_target, mask=tea_learn_from_stu_mask)
             total_loss = loss_tea_sup + depth_learn_from_stu_loss * self.depth_learn_from_stu_weight
 
@@ -483,3 +484,14 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2_ProtoConsistency' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
+
+#  !cd /kaggle/working/meanTeacherPolyp && \
+#     python DEMT_DAv2_ProtoConsistency.py \
+#                     --optuna_trial_times 0\
+#                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
+#                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
+#                     data.dataset=kvasir_SEG \
+#                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2_ProtoConsistency' \
+#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2_ProtoConsistency' \
+#                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
+#                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1 \
