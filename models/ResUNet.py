@@ -165,7 +165,7 @@ class ResNet34U_f(nn.Module):
         )
 
 
-    def forward(self, x,fp=False):
+    def forward(self, x,fp=False, feature_layers=1):
         e1, e2, e3, e4, e5 = self.encoder1(x)
 
         d5 = self.decoder5(e5)
@@ -174,8 +174,11 @@ class ResNet34U_f(nn.Module):
         d2 = self.decoder2(torch.cat((d3, e2), dim=1))
         d1 = self.decoder1(torch.cat((d2, e1), dim=1))
         out1 = self.outconv(d1)
+        
+        decoder_fea_layers = [None, d1, d2, d3, d4, d5]
+        
         if fp:
-            return F.sigmoid(out1), e5
+            return F.sigmoid(out1), decoder_fea_layers[feature_layers]
         else:
             return F.sigmoid(out1)
 
