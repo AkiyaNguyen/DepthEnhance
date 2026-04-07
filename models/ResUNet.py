@@ -815,7 +815,7 @@ class DAv2Fusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
         # feats[3] = layer 12 (high-level, semantic/geometric)
         return feats
     
-    def forward(self, x, fp=False):
+    def forward(self, x, fp=False, feature_layers=1):
         # --- RGB encoder ---
         e1, e2, e3, e4, e5 = self.rgb_encoder(x)
         # e1: [B,  64, 160, 160]
@@ -855,14 +855,14 @@ class DAv2Fusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
         dec2 = self.decoder2(torch.cat([dec3, f2], dim=1))
         dec1 = self.decoder1(torch.cat([dec2, e1], dim=1))
 
+        decoder_fea_layers = [None, dec1, dec2, dec3, dec4, dec5]
+
         out = self.outconv(dec1)
         final_output = torch.sigmoid(out)
 
         if fp:
-            return final_output, dec1
+            return final_output, decoder_fea_layers[feature_layers]
         return final_output
-
-
 
 if __name__ == "__main__":
     # rgb = torch.randn(1, 3, 320, 320)
