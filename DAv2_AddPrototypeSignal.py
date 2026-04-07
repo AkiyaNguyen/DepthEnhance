@@ -348,8 +348,9 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
             # fg_matching_tea = self._gather_pixels(tea_features, torch.cat([labeled_low_mask, unlabeled_matching_fg_mask], dim=0))
             # bg_matching_tea = self._gather_pixels(tea_features, torch.cat([labeled_low_mask, unlabeled_matching_bg_mask], dim=0))
 
+            prototype_weight = self._get_current_prototype_weight(global_step)
             total_loss = loss_tea_sup + depth_learn_from_stu_loss * self.depth_learn_from_stu_weight + \
-                self.prototype_loss_weight * (stu_prototype_loss + tea_prototype_loss)
+                prototype_weight * (stu_prototype_loss + tea_prototype_loss)
 
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.stu_model.parameters(), max_norm=1.0)
