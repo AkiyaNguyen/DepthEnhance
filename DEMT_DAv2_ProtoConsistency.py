@@ -257,18 +257,18 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
         for _, data in enumerate(self.train_dataloader):
             self.tea_optimizer.zero_grad()
             img, label, img_s = data['image'], data['label'], data['image_s']
-            img, label = img.to(device), label.to(device)
+            img, label, img_s = img.to(device), label.to(device), img_s.to(device)
 
             labeled_img = img[:self.labeled_bs]
             unlabeled_img = img[self.labeled_bs:]
+            unlabeled_img_s = img_s[self.labeled_bs:]
             label = label[:self.labeled_bs]
 
             for param in self.tea_model.rgb_encoder.parameters():
                 param.requires_grad_(False)
             tea_labeled_rgbd_output = self.tea_model(labeled_img)
             loss_tea_sup = self.class_criterion(tea_labeled_rgbd_output, label)
-
-            unlabeled_img_s = img_s[self.labeled_bs:]
+            
             tea_unlabeled_rgbd_output = self.tea_model(unlabeled_img_s)
             with torch.no_grad():
                 stu_unlabeled_output = self.stu_model(unlabeled_img)
