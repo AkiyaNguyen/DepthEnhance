@@ -202,18 +202,24 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
         self._freeze_dav2_backbone()
         device = next(self.stu_model.parameters()).device
 
-        phase1_info = {'labeled_loss': [], 'unlabeled_rgbd_loss': [],
-                       'consistency_weight': [], 'unlabeled_rgbd_cutmix_loss': [], \
-                       'loss': []}
-        phase2_info = {
-            'teacher_labeled_loss': [],
-            'depth_learn_from_stu_loss': [],
+        phase1_info = {
+            'labeled_loss': [],
+            'unlabeled_rgbd_loss': [],
+            'consistency_weight': [],
+            'unlabeled_rgbd_cutmix_loss': [],
             'stu_prototype_loss': [],
             'stu_prototype_attraction_loss': [],
             'stu_prototype_repulsion_loss': [],
+            'prototype_weight': [],
+            'loss': [],
+        }
+        phase2_info = {
+            'teacher_labeled_loss': [],
+            'depth_learn_from_stu_loss': [],
             'tea_prototype_loss': [],
             'tea_prototype_attraction_loss': [],
             'tea_prototype_repulsion_loss': [],
+            'prototype_weight': [],
             'loss': [],
         }
 
@@ -228,18 +234,36 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
             unlabeled_img_s = img_s[self.labeled_bs:]
             label = label[:self.labeled_bs]
 
-            stu_pred, stu_features = self.stu_model(img_s, fp=True)
-            labeled_stu, labeled_stu_feature = stu_pred[:self.labeled_bs], stu_features[:self.labeled_bs]
-            unlabeled_stu, unlabeled_stu_feature = stu_pred[self.labeled_bs:], stu_features[self.labeled_bs:]
+            stu_pred, stu_features = self.stu_model(
+                img_s, fp=True, feature_layers=self.prototype_fea_layers
+            )
+            labeled_stu = stu_pred[: self.labeled_bs]
+            unlabeled_stu = stu_pred[self.labeled_bs :]
 
             with torch.no_grad():
                 tea_output = self.tea_model(img)
                 tea_labeled_output = tea_output[:self.labeled_bs]
                 tea_unlabeled_output = tea_output[self.labeled_bs:]
 
-            # prototype_loss, attraction_loss, repulsion_loss = self._get_prototype_loss(
-            #     global_step, labeled_stu_feature, unlabeled_stu_feature, label, unlabeled_stu
-            # )
+            feat_hw = stu_features.shape[2:]
+            lb = self.labeled_bs
+            thr = self.prototype_threshold
+            label_resized = self._interpolate_mask_to_feat(label, feat_hw)
+            stu_pred_resized = self._interpolate_mask_to_feat(stu_pred[lb:].detach(), feat_hw)
+            labeled_resized_mask = label_resized > 0.5
+            fg_stu = self._gather_pixels(
+                stu_features,
+                torch.cat([labeled_resized_mask, stu_pred_resized > thr], dim=0),
+            )
+            bg_stu = self._gather_pixels(
+                stu_features,
+                torch.cat(
+                    [~labeled_resized_mask, stu_pred_resized < (1.0 - thr)], dim=0
+                ),
+            )
+            stu_prototype_loss, stu_attraction_loss, stu_repulsion_loss = self._get_prototype_loss(
+                fg_stu, bg_stu, self.prototype["fg_student"], self.prototype["bg_student"]
+            )
 
             unlabeled_img_s_cutmix, ema_pred_u_cutmix = apa_cutmix(
                 unlabeled_img_s, tea_unlabeled_output, beta=0.3, t=self.current_epoch, T=self.num_epochs
@@ -259,11 +283,14 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
             consistency_weight = self._get_current_consistency_weight(
                 global_step=global_step
             )
-            # prototype_weight = self._get_current_prototype_weight(global_step)
-                
-            total_loss = loss_sup + consistency_weight * loss_consist_rgbd + \
-                loss_consist_rgbd_cutmix 
-                    # + prototype_weight * prototype_loss
+            prototype_weight = self._get_current_prototype_weight(global_step)
+
+            total_loss = (
+                loss_sup
+                + consistency_weight * loss_consist_rgbd
+                + loss_consist_rgbd_cutmix
+                + prototype_weight * stu_prototype_loss
+            )
 
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.stu_model.parameters(), max_norm=1.0)
@@ -274,15 +301,24 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
                 model_b=self.stu_model.encoder1,
             )
 
+            self.prototype["fg_student"] = self._update_prototype(
+                self.prototype["fg_student"], fg_stu.detach()
+            ).detach()
+            self.prototype["bg_student"] = self._update_prototype(
+                self.prototype["bg_student"], bg_stu.detach()
+            ).detach()
+
             phase1_info['labeled_loss'].append(loss_sup.item())
             phase1_info['unlabeled_rgbd_loss'].append(loss_consist_rgbd.item())
             phase1_info['unlabeled_rgbd_cutmix_loss'].append(loss_consist_rgbd_cutmix.item())
             phase1_info['consistency_weight'].append(consistency_weight)
+            phase1_info['stu_prototype_loss'].append(stu_prototype_loss.item())
+            phase1_info['stu_prototype_attraction_loss'].append(stu_attraction_loss.item())
+            phase1_info['stu_prototype_repulsion_loss'].append(stu_repulsion_loss.item())
+            phase1_info['prototype_weight'].append(prototype_weight)
             phase1_info['loss'].append(total_loss.item())
-            # phase1_info['prototype_loss'].append(prototype_loss.item())
-            # phase1_info['prototype_weight'].append(prototype_weight)
-            # phase1_info['prototype_attraction_loss'].append(attraction_loss.item())
-            # phase1_info['prototype_repulsion_loss'].append(repulsion_loss.item())
+
+            self.scheduler.step()
 
 
         p1 = {f'phase1_{k}': np.mean(v) for k, v in phase1_info.items()}
@@ -290,23 +326,23 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
         self._add_info(p1)
 
         # ========== PHASE 2: Train Teacher (DAv2 fusion/decoder), freeze rgb_encoder ==========
-        for _, data in enumerate(self.train_dataloader):
+        for batch_id2, data in enumerate(self.train_dataloader):
             self.tea_optimizer.zero_grad()
-            self.stu_optimizer.zero_grad()
             img, label = data['image'], data['label']
             img, label = img.to(device), label.to(device)
 
             label = label[: self.labeled_bs]
+            global_step_p2 = batch_id2 + self.current_epoch * len(self.train_dataloader)
 
             tea_output, tea_features = self.tea_model(img, fp=True, feature_layers=self.prototype_fea_layers)
             tea_labeled_output = tea_output[: self.labeled_bs]
             tea_unlabeled_output = tea_output[self.labeled_bs :]
 
-            stu_output, stu_features = self.stu_model(img, fp=True, feature_layers=self.prototype_fea_layers)
-            stu_unlabeled_output = stu_output[self.labeled_bs :]
+            with torch.no_grad():
+                stu_unlabeled_output = self.stu_model(img[self.labeled_bs :])
+            stu_u_stop = stu_unlabeled_output.detach()
 
             # Teacher distillation from rounded student: stop-grad through student (targets / agreement mask).
-            stu_u_stop = stu_unlabeled_output.detach()
 
             for param in self.tea_model.rgb_encoder.parameters():
                 param.requires_grad_(False)
@@ -324,21 +360,25 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
 
             feat_hw = tea_features.shape[2:]
             label_resized = self._interpolate_mask_to_feat(label, feat_hw)
-            # Detached preds define which feature cells to pool; gradients still flow via stu_features / tea_features.
-            stu_pred_resized = self._interpolate_mask_to_feat(stu_u_stop, feat_hw)
-            tea_pred_resized = self._interpolate_mask_to_feat(tea_unlabeled_output.detach(), feat_hw)
+            tea_pred_resized = self._interpolate_mask_to_feat(
+                tea_unlabeled_output.detach(), feat_hw
+            )
 
             labeled_resized_mask = label_resized > 0.5
+            thr = self.prototype_threshold
 
-            fg_stu = self._gather_pixels(stu_features, torch.cat([labeled_resized_mask, stu_pred_resized > self.prototype_threshold], dim=0))
-            bg_stu = self._gather_pixels(stu_features, torch.cat([~labeled_resized_mask, stu_pred_resized < (1.0 - self.prototype_threshold)], dim=0))
-            fg_tea = self._gather_pixels(tea_features, torch.cat([labeled_resized_mask, tea_pred_resized > self.prototype_threshold], dim=0))
-            bg_tea = self._gather_pixels(tea_features, torch.cat([~labeled_resized_mask, tea_pred_resized < (1.0 - self.prototype_threshold)], dim=0))
+            fg_tea = self._gather_pixels(
+                tea_features,
+                torch.cat([labeled_resized_mask, tea_pred_resized > thr], dim=0),
+            )
+            bg_tea = self._gather_pixels(
+                tea_features,
+                torch.cat([~labeled_resized_mask, tea_pred_resized < (1.0 - thr)], dim=0),
+            )
 
-            stu_prototype_loss, stu_attraction_loss, stu_repulsion_loss = self._get_prototype_loss(fg_stu, bg_stu, \
-                self.prototype["fg_student"], self.prototype["bg_student"])
-            tea_prototype_loss, tea_attraction_loss, tea_repulsion_loss = self._get_prototype_loss(fg_tea, bg_tea, \
-                self.prototype["fg_teacher"], self.prototype["bg_teacher"])
+            tea_prototype_loss, tea_attraction_loss, tea_repulsion_loss = self._get_prototype_loss(
+                fg_tea, bg_tea, self.prototype["fg_teacher"], self.prototype["bg_teacher"]
+            )
 
             # # Relational match: same spatial pixels on labeled subset only (paired fg / paired bg).
             # unlabeled_matching_fg_mask = (stu_pred_low > self.prototype_threshold) & (tea_pred_low > self.prototype_threshold)
@@ -348,30 +388,30 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
             # fg_matching_tea = self._gather_pixels(tea_features, torch.cat([labeled_low_mask, unlabeled_matching_fg_mask], dim=0))
             # bg_matching_tea = self._gather_pixels(tea_features, torch.cat([labeled_low_mask, unlabeled_matching_bg_mask], dim=0))
 
-            prototype_weight = self._get_current_prototype_weight(global_step)
-            total_loss = loss_tea_sup + depth_learn_from_stu_loss * self.depth_learn_from_stu_weight + \
-                prototype_weight * (stu_prototype_loss + tea_prototype_loss)
+            prototype_weight = self._get_current_prototype_weight(global_step_p2)
+            total_loss = (
+                loss_tea_sup
+                + depth_learn_from_stu_loss * self.depth_learn_from_stu_weight
+                + prototype_weight * tea_prototype_loss
+            )
 
             total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.stu_model.parameters(), max_norm=1.0)
             torch.nn.utils.clip_grad_norm_(self.tea_model.parameters(), max_norm=1.0)
             self.tea_optimizer.step()
-            self.stu_optimizer.step()
 
-            
-            self.prototype["fg_student"] = self._update_prototype(self.prototype["fg_student"], fg_stu).detach()
-            self.prototype["bg_student"] = self._update_prototype(self.prototype["bg_student"], bg_stu).detach()
-            self.prototype["fg_teacher"] = self._update_prototype(self.prototype["fg_teacher"], fg_tea).detach()
-            self.prototype["bg_teacher"] = self._update_prototype(self.prototype["bg_teacher"], bg_tea).detach()
-            
+            self.prototype["fg_teacher"] = self._update_prototype(
+                self.prototype["fg_teacher"], fg_tea.detach()
+            ).detach()
+            self.prototype["bg_teacher"] = self._update_prototype(
+                self.prototype["bg_teacher"], bg_tea.detach()
+            ).detach()
+
             phase2_info['teacher_labeled_loss'].append(loss_tea_sup.item())
             phase2_info['depth_learn_from_stu_loss'].append(depth_learn_from_stu_loss.item())
-            phase2_info['stu_prototype_loss'].append(stu_prototype_loss.item())
-            phase2_info['stu_prototype_attraction_loss'].append(stu_attraction_loss.item())
-            phase2_info['stu_prototype_repulsion_loss'].append(stu_repulsion_loss.item())
             phase2_info['tea_prototype_loss'].append(tea_prototype_loss.item())
             phase2_info['tea_prototype_attraction_loss'].append(tea_attraction_loss.item())
             phase2_info['tea_prototype_repulsion_loss'].append(tea_repulsion_loss.item())
+            phase2_info['prototype_weight'].append(prototype_weight)
             phase2_info['loss'].append(total_loss.item())
 
             for name, param in self.tea_model.named_parameters():
@@ -381,7 +421,6 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
                     param.requires_grad_(True)
 
 
-        self.scheduler.step()
 
         if self.tea_scheduler is not None:
             self.tea_scheduler.step()
@@ -475,7 +514,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
                                     momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
     scheduler_power = float(cfg.get('scheduler.power'))
     ## try student scheduler updated by epoch
-    scheduler = LambdaLR(optimizer, lambda e: max(0.0, 1.0 - pow(min(e, nEpoch) / nEpoch, scheduler_power)))
+    scheduler = LambdaLR(optimizer, lambda e: max(0.0, 1.0 - pow(min(e, total_iter) / total_iter, scheduler_power)))
     tea_scheduler = LambdaLR(tea_optimizer, lambda e: max(0.0, 1.0 - pow(min(e, nEpoch) / nEpoch, scheduler_power)))
 
     trainer = DEMT_DAv2_ProtoConsistency(

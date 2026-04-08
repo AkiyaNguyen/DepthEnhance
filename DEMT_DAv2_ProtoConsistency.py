@@ -256,12 +256,11 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
         # ========== PHASE 2: Train Teacher (DAv2 fusion/decoder), freeze rgb_encoder ==========
         for _, data in enumerate(self.train_dataloader):
             self.tea_optimizer.zero_grad()
-            img, label, img_s = data['image'], data['label'], data['image_s']
-            img, label, img_s = img.to(device), label.to(device), img_s.to(device)
+            img, label = data['image'], data['label']
+            img, label = img.to(device), label.to(device)
 
             labeled_img = img[:self.labeled_bs]
             unlabeled_img = img[self.labeled_bs:]
-            unlabeled_img_s = img_s[self.labeled_bs:]
             label = label[:self.labeled_bs]
 
             for param in self.tea_model.rgb_encoder.parameters():
@@ -269,7 +268,7 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
             tea_labeled_rgbd_output = self.tea_model(labeled_img)
             loss_tea_sup = self.class_criterion(tea_labeled_rgbd_output, label)
             
-            tea_unlabeled_rgbd_output = self.tea_model(unlabeled_img_s)
+            tea_unlabeled_rgbd_output = self.tea_model(unlabeled_img)
             with torch.no_grad():
                 stu_unlabeled_output = self.stu_model(unlabeled_img)
             st = self.student_reliable_threshold
