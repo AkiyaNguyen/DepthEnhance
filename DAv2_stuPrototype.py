@@ -209,10 +209,6 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
         phase2_info = {
             'teacher_labeled_loss': [],
             'depth_learn_from_stu_loss': [],
-            'tea_prototype_loss': [],
-            'tea_prototype_attraction_loss': [],
-            'tea_prototype_repulsion_loss': [],
-            'tea_prototype_weight': [],
             'loss': [],
         }
 
@@ -277,14 +273,6 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
                 model_b=self.stu_model.encoder1,
             )
 
-            # if add_prototype:
-            #     self.prototype["fg_student"] = self._update_prototype(
-            #         self.prototype["fg_student"], fg_stu.detach()
-            #     ).detach()
-            #     self.prototype["bg_student"] = self._update_prototype(
-            #         self.prototype["bg_student"], bg_stu.detach()
-            #     ).detach()
-
             phase1_info['labeled_loss'].append(loss_sup.item())
             phase1_info['unlabeled_rgbd_loss'].append(loss_consist_rgbd.item())
             phase1_info['unlabeled_rgbd_cutmix_loss'].append(loss_consist_rgbd_cutmix.item())
@@ -335,15 +323,15 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
                 tea_unlabeled_output, round_stu_target, mask=tea_learn_from_stu_mask
             )
 
-            prototype_weight = self._get_current_prototype_weight(global_step_p2)
+            # prototype_weight = self._get_current_prototype_weight(global_step_p2)
 
-            tea_prototype_loss, tea_attraction_loss, tea_repulsion_loss = self._get_prototype_loss(global_step_p2, tea_features, \
-                tea_unlabeled_output, label, role='teacher')
+            # tea_prototype_loss, tea_attraction_loss, tea_repulsion_loss = self._get_prototype_loss(global_step_p2, tea_features, \
+            #     tea_unlabeled_output, label, role='teacher')
             
             total_loss = (
                 loss_tea_sup
                 + depth_learn_from_stu_loss * self.depth_learn_from_stu_weight
-                + tea_prototype_loss * prototype_weight
+                # + tea_prototype_loss * prototype_weight
             )
             # total_loss = loss_tea_sup + depth_learn_from_stu_loss * self.depth_learn_from_stu_weight
 
@@ -400,10 +388,6 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
 
             phase2_info['teacher_labeled_loss'].append(loss_tea_sup.item())
             phase2_info['depth_learn_from_stu_loss'].append(depth_learn_from_stu_loss.item())
-            phase2_info['tea_prototype_loss'].append(tea_prototype_loss.item())
-            phase2_info['tea_prototype_attraction_loss'].append(tea_attraction_loss.item())
-            phase2_info['tea_prototype_repulsion_loss'].append(tea_repulsion_loss.item())
-            phase2_info['tea_prototype_weight'].append(prototype_weight)
             phase2_info['loss'].append(total_loss.item())
 
             for name, param in self.tea_model.named_parameters():
@@ -573,9 +557,9 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training with prototype consistency (DAv2Fusion_ResNet34U_f_EMAEncoderOnly).')
+    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training with prototype consistency as student only).')
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
-    parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2_ProtoConsistency.yaml', help='Path to YAML config')
+    parser.add_argument('--config', type=str, default='cfg/DAv2_stuPrototype.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
     cfg = Config(config_file=args.config, cli_overrides=unknown)
 
@@ -597,24 +581,13 @@ if __name__ == '__main__':
             print(f"    {key}: {value}")
 
 #  !cd /kaggle/working/meanTeacherPolyp && \
-#     python DEMT_DAv2_ProtoConsistency.py \
-#                     --optuna_trial_times 3\
-#                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
-#                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
-#                     data.dataset=kvasir_SEG \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2_ProtoConsistency' \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2_ProtoConsistency' \
-#                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
-#                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
-
-#  !cd /kaggle/working/meanTeacherPolyp && \
-#     python DAv2_AddPrototypeSignal.py \
+#     python DAv2_stuPrototype.py \
 #                     --optuna_trial_times 0\
 #                     Trainer.prototype_fea_layers=2 \
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='DAv2_AddPrototypeSignal' \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DAv2_AddPrototypeSignal' \
+#                     Hook.ExtendMLFlowLoggerHook.run_name='DAv2_stuPrototype' \
+#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DAv2_stuPrototype' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1 \
