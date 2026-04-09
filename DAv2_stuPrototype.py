@@ -146,8 +146,11 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
 
         total_loss = attraction_loss - repulsion_loss * self.prototype_balance_weight
 
-        self.prototype['fg_' + role] = self._update_prototype(fg_prototype, fg_features).detach()
-        self.prototype['bg_' + role] = self._update_prototype(bg_prototype, bg_features).detach()
+        fg_fea_detach = fg_features.detach()
+        bg_fea_detach = bg_features.detach()
+
+        self.prototype['fg_' + role] = self._update_prototype(fg_prototype, fg_fea_detach)
+        self.prototype['bg_' + role] = self._update_prototype(bg_prototype, bg_fea_detach)
         
         return total_loss, attraction_loss, repulsion_loss
 
@@ -583,7 +586,7 @@ if __name__ == '__main__':
 #  !cd /kaggle/working/meanTeacherPolyp && \
 #     python DAv2_stuPrototype.py \
 #                     --optuna_trial_times 0\
-#                     Trainer.prototype_fea_layers=2 \
+#                     Trainer.prototype_fea_layers=4 \
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \

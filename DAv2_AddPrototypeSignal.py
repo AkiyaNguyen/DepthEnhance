@@ -146,8 +146,11 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
 
         total_loss = attraction_loss - repulsion_loss * self.prototype_balance_weight
 
-        self.prototype['fg_' + role] = self._update_prototype(fg_prototype, fg_features).detach()
-        self.prototype['bg_' + role] = self._update_prototype(bg_prototype, bg_features).detach()
+        fg_fea_detach = fg_features.detach()
+        bg_fea_detach = bg_features.detach()
+        
+        self.prototype['fg_' + role] = self._update_prototype(fg_prototype, fg_fea_detach)
+        self.prototype['bg_' + role] = self._update_prototype(bg_prototype, bg_fea_detach)
         
         return total_loss, attraction_loss, repulsion_loss
 
