@@ -299,7 +299,7 @@ class DEMT_DAv2_ProtoConsistency(Trainer):
             label = label[: self.labeled_bs]
             global_step_p2 = batch_id2 + self.current_epoch * len(self.train_dataloader)
 
-            tea_output, tea_features = self.tea_model(img, fp=True, feature_layers=self.prototype_fea_layers)
+            tea_output = self.tea_model(img)
             tea_labeled_output = tea_output[: self.labeled_bs]
             tea_unlabeled_output = tea_output[self.labeled_bs :]
 
@@ -557,7 +557,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training with prototype consistency as student only).')
+    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher with student-only prototype loss (no teacher prototype in phase 2).')
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
     parser.add_argument('--config', type=str, default='cfg/DAv2_stuPrototype.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
