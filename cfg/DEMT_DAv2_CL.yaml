@@ -87,14 +87,14 @@ Hook:
 score_criteria: test_stu_Dice
 
 hyperparameter_sweeping:
-  Trainer.contrastive_weight:
-    method: suggest_categorical
-    params:
-      name: contrastive_weight
-      choices:
-        - 0.05
-        - 0.1
-        - 0.2
+  # Trainer.contrastive_weight:
+  #   method: suggest_categorical
+  #   params:
+  #     name: contrastive_weight
+  #     choices:
+  #       - 0.05
+  #       - 0.1
+  #       - 0.2
   Trainer.feature_layers:
     method: suggest_categorical
     params:
