@@ -163,3 +163,43 @@ class L2Loss(nn.Module):
 
     def forward(self, feat1: torch.Tensor, feat2: torch.Tensor) -> torch.Tensor:
         return torch.norm(feat1 - feat2, p=2, dim=1).mean()
+
+
+class ContrastiveLoss(nn.Module):
+    def __init__(self, temperature: float = 0.1):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(self, feature: torch.Tensor, label: torch.Tensor, ignore_label: int = -1) -> torch.Tensor:
+        """
+        feature: (B, D, H, W) or (N, D)
+        label:   (B, H, W)    or (N,)   — 0/1/-1
+        """
+        # Flatten if spatial tensor
+        if feature.dim() == 4:
+            B, D, H, W = feature.shape
+            feature = feature.permute(0, 2, 3, 1).reshape(-1, D)  # (B*H*W, D)
+            label   = label.reshape(-1)                             # (B*H*W,)
+
+        # Remove ignore pixels
+        valid_mask = label != ignore_label
+        feature    = feature[valid_mask]
+        label      = label[valid_mask]
+
+        M = feature.shape[0]
+        if M < 2:
+            return torch.tensor(0.0, device=feature.device)
+
+        feature  = F.normalize(feature, dim=1)
+        sim      = torch.mm(feature, feature.T) / self.temperature
+        diag     = torch.eye(M, dtype=torch.bool, device=feature.device)
+        pos_mask = (label.unsqueeze(0) == label.unsqueeze(1)) & ~diag
+
+        if not pos_mask.any():
+            return torch.tensor(0.0, device=feature.device)
+
+        denom    = torch.logsumexp(sim.masked_fill(diag, float('-inf')), dim=1)
+        pos_mean = (sim * pos_mask.float()).sum(dim=1) / pos_mask.float().sum(dim=1).clamp(min=1)
+
+        valid = pos_mask.any(dim=1)
+        return (denom - pos_mean)[valid].mean()
