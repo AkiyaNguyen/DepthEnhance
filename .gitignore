@@ -41,3 +41,6 @@ temp_requirements.txt
 view_image_mask_depth.py
 visualize_demt_adddepth_predictions.py
 inference_kvasir.py
+lowest_dice_images.txt
+find_lowest_dice_images.py
+FIND_LOWEST_DICE_USAGE.md

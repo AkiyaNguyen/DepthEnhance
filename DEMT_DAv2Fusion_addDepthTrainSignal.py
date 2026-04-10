@@ -287,13 +287,13 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     scheduler = CosineAnnealingLR(
         optimizer, 
         T_max=total_iter, 
-        eta_min=1e-6
+        eta_min=1e-7
     )
 
     tea_scheduler = CosineAnnealingLR(
         tea_optimizer, 
         T_max=nEpoch, 
-        eta_min=1e-6
+        eta_min=1e-7
     )
 
     trainer = DAv2Fusion_MT_Trainer_addDepthTrainSignal(

@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import optuna
 import mlflow
 
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.optim.lr_scheduler import LambdaLR
 from utils.ramps import sigmoid_rampup
 
@@ -23,7 +24,7 @@ from utils.build_dataset import build_dataset
 from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss
 
 
-class DAv2RelationalTrainer(Trainer):
+class DAv2_BARD_Trainer(Trainer):
     """
     Relational Distillation trainer for structure-preserving knowledge transfer.
     Student (RGB) learns spatial structural relationships from Teacher's DAv2 backbone (Depth).
@@ -114,6 +115,15 @@ class DAv2RelationalTrainer(Trainer):
         
         return relation
 
+    def _get_boundary_map(self, mask: torch.Tensor, kernel_size: int = 5) -> torch.Tensor:
+        """Extract boundary map using morphological gradient: dilation - erosion."""
+        pad = kernel_size // 2
+        mask = (mask > 0.5).float()
+        dilation = F.max_pool2d(mask, kernel_size=kernel_size, stride=1, padding=pad)
+        erosion = -F.max_pool2d(-mask, kernel_size=kernel_size, stride=1, padding=pad)
+        boundary = (dilation - erosion).clamp(min=0.0, max=1.0)
+        return boundary
+
     def _get_current_consistency_weight(self, global_step):
         return self.consistency * sigmoid_rampup(current=global_step, rampup_length=self.consistency_rampup)
 
@@ -158,7 +168,7 @@ class DAv2RelationalTrainer(Trainer):
                        'relational_loss': [], 'loss': []}
         phase2_info = {'teacher_labeled_loss': [], 'depth_learn_from_stu_loss': [], 'loss': []}
 
-        # ========== PHASE 1: Train Student + EMA (encoder only) with Relational Distillation ==========
+        # ========== PHASE 1: Train Student + EMA (encoder only) with BARD ==========
         for batch_id, data in enumerate(self.train_dataloader):
             self.stu_optimizer.zero_grad()
             img_s, img, label = data['image_s'], data['image'], data['label']
@@ -179,68 +189,52 @@ class DAv2RelationalTrainer(Trainer):
             labeled_stu = stu_pred[:self.labeled_bs]
             unlabeled_stu = stu_pred[self.labeled_bs:]
 
-# --- BẮT ĐẦU ĐOẠN CODE MỚI ---
             with torch.no_grad():
                 tea_output = self.tea_model(unlabeled_img)
-                
-                # Gọi trực tiếp dav2_encoder với ảnh CÓ NHÃN
                 tea_dav2_out = self.tea_model.dav2_encoder(img[:self.labeled_bs])
-                
-                # Trích xuất tensor đặc trưng
+
                 if hasattr(tea_dav2_out, 'feature_maps'):
                     tea_dav2_feat = tea_dav2_out.feature_maps[-1]
                 elif hasattr(tea_dav2_out, 'hidden_states') and tea_dav2_out.hidden_states is not None:
                     tea_dav2_feat = tea_dav2_out.hidden_states[-1]
                 elif hasattr(tea_dav2_out, 'last_hidden_state'):
                     tea_dav2_feat = tea_dav2_out.last_hidden_state
-# ... [Code cũ phía trên] ...
                 elif isinstance(tea_dav2_out, (list, tuple)):
                     tea_dav2_feat = tea_dav2_out[-1]
                 else:
                     tea_dav2_feat = tea_dav2_out
 
-                # ========================================================
-                # BẮT ĐẦU ĐOẠN FIX LỖI: CHUYỂN ViT 3D THÀNH MẶT PHẲNG 4D
-                # ========================================================
                 if len(tea_dav2_feat.shape) == 3:
                     B_tea, L_tea, C_tea = tea_dav2_feat.shape
-                    
-                    # DAv2 (DINOv2) mặc định dùng patch_size = 14
                     patch_size = 14
                     Hp = img.shape[2] // patch_size
                     Wp = img.shape[3] // patch_size
-                    
-                    # Cắt bỏ các token phụ trợ (CLS, register) ở đầu chuỗi
-                    # Chỉ lấy đúng số lượng token không gian ở phần đuôi
                     spatial_tokens = tea_dav2_feat[:, -(Hp * Wp):, :]
-                    
-                    # Reshape từ 3D [Batch, N_patches, Channel] 
-                    # về 4D [Batch, Channel, Height, Width]
                     tea_dav2_feat = spatial_tokens.transpose(1, 2).reshape(B_tea, C_tea, Hp, Wp)
-                # ========================================================
-                # KẾT THÚC ĐOẠN FIX LỖI
-                # ========================================================
 
             relational_loss = torch.tensor(0.0, device=device)
             if tea_dav2_feat is not None and stu_feat is not None:
-                # Lấy đặc trưng của ảnh CÓ NHÃN từ Student
                 stu_labeled_feat = stu_feat[:self.labeled_bs]
-                
-                stu_feat_b, stu_c, stu_h, stu_w = stu_labeled_feat.shape
-                # Lúc này tea_dav2_feat chắc chắn đã là 4D, lệnh unpack sẽ không bị lỗi nữa
-                tea_feat_b, tea_c, tea_h, tea_w = tea_dav2_feat.shape
-                # ... [Phần code bên dưới giữ nguyên] ...
-                
-                if (stu_h != tea_h) or (stu_w != tea_w):
-                    tea_dav2_feat = F.interpolate(tea_dav2_feat, size=(stu_h, stu_w), 
-                                                   mode='bilinear', align_corners=False)
-                
-                # Tính toán và so sánh ma trận tương quan
+
+                _, _, tea_h, tea_w = tea_dav2_feat.shape
+                if stu_labeled_feat.shape[-2:] != (tea_h, tea_w):
+                    stu_labeled_feat = F.interpolate(
+                        stu_labeled_feat,
+                        size=(tea_h, tea_w),
+                        mode='bilinear',
+                        align_corners=False,
+                    )
+
+                boundary_map = self._get_boundary_map(label[:self.labeled_bs], kernel_size=5)
+                boundary_map = F.interpolate(boundary_map, size=(tea_h, tea_w), mode='nearest')
+                boundary_flat = boundary_map.flatten(start_dim=1)
+                attention_w = torch.maximum(boundary_flat.unsqueeze(2), boundary_flat.unsqueeze(1))
+
                 stu_relation = self._compute_spatial_relation(stu_labeled_feat)
                 tea_relation = self._compute_spatial_relation(tea_dav2_feat)
-                
-                relational_loss = F.mse_loss(stu_relation, tea_relation)
-            # --- KẾT THÚC ĐOẠN CODE MỚI ---
+
+                relation_mse = F.mse_loss(stu_relation, tea_relation, reduction='none')
+                relational_loss = (relation_mse * attention_w).mean()
 
             unlabeled_img_s_cutmix, ema_pred_u_cutmix = apa_cutmix(
                 unlabeled_img_s, tea_output, beta=0.3, t=self.current_epoch, T=self.num_epochs
@@ -258,7 +252,7 @@ class DAv2RelationalTrainer(Trainer):
                 global_step=batch_id + self.current_epoch * len(self.train_dataloader)
             )
             
-            # Total loss includes relational distillation
+            # Total loss includes boundary-aware relational distillation.
             total_loss = loss_sup + consistency_weight * loss_consist_rgbd + loss_consist_rgbd_cutmix + \
                         (relational_loss * self.relational_weight)
 
@@ -332,7 +326,7 @@ class DAv2RelationalTrainer(Trainer):
         self._add_info(p2)
 
 
-class MeanTeacherEvalHook_DAv2_Relational(EvalHook):
+class MeanTeacherEvalHook_DAv2_BARD(EvalHook):
     """Eval hook for relational distillation - evaluates both student and teacher outputs."""
 
     def __init__(self, trainer: Trainer, eval_data_loader: torch.utils.data.DataLoader, eval_every_epoch: int, prefix: str = '') -> None:
@@ -375,9 +369,9 @@ class MeanTeacherEvalHook_DAv2_Relational(EvalHook):
             self.trainer._add_info(result)
 
 
-def training_relational(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
+def training_bard(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     """
-    Training function for Relational Distillation framework.
+    Training function for Boundary-Aware Relational Distillation (BARD).
     
     Args:
         cfg: Configuration object
@@ -432,7 +426,7 @@ def training_relational(cfg: Config, trial: typing.Optional[optuna.trial.Trial] 
 
 
 
-    trainer = DAv2RelationalTrainer(
+    trainer = DAv2_BARD_Trainer(
         stu_model, tea_model, train_dataloader,
         optimizer, tea_optimizer,
         scheduler, nEpoch,
@@ -453,9 +447,9 @@ def training_relational(cfg: Config, trial: typing.Optional[optuna.trial.Trial] 
 
     hook_builder = HookBuilder(cfg, trainer)
     if val_dataloader is not None:
-        hook_builder(MeanTeacherEvalHook_DAv2_Relational, eval_data_loader=val_dataloader,
+        hook_builder(MeanTeacherEvalHook_DAv2_BARD, eval_data_loader=val_dataloader,
                      eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix='val_')
-    hook_builder(MeanTeacherEvalHook_DAv2_Relational, eval_data_loader=test_dataloader,
+    hook_builder(MeanTeacherEvalHook_DAv2_BARD, eval_data_loader=test_dataloader,
                  eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix='test_')
 
     hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
@@ -486,19 +480,19 @@ def training_relational(cfg: Config, trial: typing.Optional[optuna.trial.Trial] 
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Relational Distillation Mean Teacher training (DAv2 Relational).')
+    parser = argparse.ArgumentParser(description='Boundary-Aware Relational Distillation Mean Teacher training (DAv2 BARD).')
     parser.add_argument('--optuna_trial_times', type=int, default=0, help='Optuna trials; 0 = no Optuna.')
     parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2_Relational.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
     cfg = Config(config_file=args.config, cli_overrides=unknown)
 
     if args.optuna_trial_times == 0:
-        score = training_relational(cfg)
+        score = training_bard(cfg)
         print(f"Score: {score}")
     else:
         def objective(trial):
             trial_cfg = copy.deepcopy(cfg)
-            return training_relational(trial_cfg, trial)
+            return training_bard(trial_cfg, trial)
 
         study = optuna.create_study(direction='maximize')
         study.optimize(objective, n_trials=args.optuna_trial_times)
