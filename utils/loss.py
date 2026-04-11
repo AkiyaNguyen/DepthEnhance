@@ -165,7 +165,7 @@ class L2Loss(nn.Module):
         return torch.norm(feat1 - feat2, p=2, dim=1).mean()
 
 
-class ContrastiveLoss(nn.Module):
+class SupContrastiveLoss(nn.Module):
     def __init__(self, temperature: float = 0.1):
         super().__init__()
         self.temperature = temperature
@@ -193,7 +193,7 @@ class ContrastiveLoss(nn.Module):
         feature  = F.normalize(feature, dim=1)
         sim      = torch.mm(feature, feature.T) / self.temperature
         diag     = torch.eye(M, dtype=torch.bool, device=feature.device)
-        pos_mask = (label.unsqueeze(0) == label.unsqueeze(1)) & ~diag
+        pos_mask = (label.unsqueeze(0) == label.unsqueeze(1)) & ~diag ## mat(i, j) = label i == label j
 
         if not pos_mask.any():
             return torch.tensor(0.0, device=feature.device)

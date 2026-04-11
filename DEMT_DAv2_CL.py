@@ -19,7 +19,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from utils.ramps import sigmoid_rampup
 
 from utils.build_dataset import build_dataset
-from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss, ContrastiveLoss
+from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss, SupContrastiveLoss
 import torch.nn.functional as F
 
 class DEMT_DAv2_CL_Trainer(Trainer):
@@ -51,7 +51,7 @@ class DEMT_DAv2_CL_Trainer(Trainer):
         self.student_reliable_threshold = student_reliable_threshold
         self.depth_learn_from_stu_weight = depth_learn_from_stu_weight
         self.feature_layers = feature_layers
-        self.contrastive_loss = ContrastiveLoss()
+        self.contrastive_loss = SupContrastiveLoss()
         self.contrastive_rampup = contrastive_rampup
         self.contrastive_weight = contrastive_weight
         self._freeze_dav2_backbone()
