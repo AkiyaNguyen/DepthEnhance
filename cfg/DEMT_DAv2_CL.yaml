@@ -102,5 +102,5 @@ hyperparameter_sweeping:
     params:
       name: feature_layers
       choices:
-        - 2
+        - 4
         - 3
