@@ -30,7 +30,8 @@ class DEMT_DAv2_CL_Trainer(Trainer):
 
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
                  consistency_rampup, consistency, tea_scheduler=None, teacher_reliable_threshold=0.75,
-                 student_reliable_threshold=0.85, depth_learn_from_stu_weight=1.0, feature_layers=2, contrastive_rampup=2000.0, contrastive_weight=0.1, **kwargs) -> None:
+                 student_reliable_threshold=0.85, depth_learn_from_stu_weight=1.0, feature_layers=2, contrastive_rampup=2000.0, contrastive_weight=0.1,
+                 **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
         self.stu_model = stu_model
         self.tea_model = tea_model
@@ -54,7 +55,10 @@ class DEMT_DAv2_CL_Trainer(Trainer):
         self.contrastive_loss = SupContrastiveLoss()
         self.contrastive_rampup = contrastive_rampup
         self.contrastive_weight = contrastive_weight
+
         self._freeze_dav2_backbone()
+        # set_feature_layers is called in training() *before* student optimizer creation so
+        # SGD(stu_model.parameters()) includes the final proj_head tensors (see training()).
 
     def _freeze_dav2_backbone(self) -> None:
         """Ensure DAv2 backbone is always frozen."""
@@ -137,7 +141,7 @@ class DEMT_DAv2_CL_Trainer(Trainer):
             unlabeled_img_s = img_s[self.labeled_bs:]
             label = label[:self.labeled_bs]
 
-            stu_pred, stu_feature = self.stu_model(img_s, fp=True,feature_layers=self.feature_layers)
+            stu_pred, stu_feature = self.stu_model(img_s, fp=True)
             labeled_stu, labeled_stu_feature = stu_pred[:self.labeled_bs], stu_feature[:self.labeled_bs]
             unlabeled_stu, unlabeled_stu_feature = stu_pred[self.labeled_bs:], stu_feature[self.labeled_bs:]
 
@@ -308,6 +312,11 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     stu_model = getattr(models, cfg.get('model.stu_model.name'))(num_classes=cfg.get('model.num_channels_output')).to(device)
     tea_model = getattr(models, cfg.get('model.tea_model.name'))(num_classes=cfg.get('model.num_channels_output')).to(device)
+
+    fl = int(cfg.get('model.stu_model.feature_layers', 2))
+    add_ph = bool(cfg.get('model.stu_model.add_proj_head', True))
+    if hasattr(stu_model, 'set_feature_layers'):
+        stu_model.set_feature_layers(fl, add_proj_head=add_ph)
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
