@@ -408,21 +408,21 @@ def training_bard(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
     tea_optimizer = torch.optim.SGD(tea_model.parameters(), lr=cfg.get('optimizer.lr'),
                                     momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
-    # scheduler_power = float(cfg.get('scheduler.power'))
-    # scheduler = LambdaLR(optimizer, lambda e: max(0.0, 1.0 - pow(min(e, total_iter) / total_iter, scheduler_power)))
-    # tea_scheduler = LambdaLR(tea_optimizer, lambda e: max(0.0, 1.0 - pow(min(e, nEpoch) / nEpoch, scheduler_power)))
+    scheduler_power = float(cfg.get('scheduler.power'))
+    scheduler = LambdaLR(optimizer, lambda e: max(0.0, pow(1.0 - min(e, total_iter) / total_iter, scheduler_power)))
+    tea_scheduler = LambdaLR(tea_optimizer, lambda e: max(0.0, pow(1.0 - min(e, nEpoch) / nEpoch, scheduler_power)))
 
-    scheduler = CosineAnnealingLR(
-        optimizer, 
-        T_max=total_iter, 
-        eta_min=1e-7
-    )
+    # scheduler = CosineAnnealingLR(
+    #     optimizer, 
+    #     T_max=total_iter, 
+    #     eta_min=1e-7
+    # )
 
-    tea_scheduler = CosineAnnealingLR(
-        tea_optimizer, 
-        T_max=nEpoch, 
-        eta_min=1e-7
-    )
+    # tea_scheduler = CosineAnnealingLR(
+    #     tea_optimizer, 
+    #     T_max=nEpoch, 
+    #     eta_min=1e-7
+    # )
 
 
 
