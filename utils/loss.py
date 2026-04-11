@@ -203,3 +203,64 @@ class SupContrastiveLoss(nn.Module):
 
         valid = pos_mask.any(dim=1)
         return (denom - pos_mean)[valid].mean()
+
+
+class MemoryEfficientSupContrastiveLoss(nn.Module):
+    def __init__(self, temperature: float = 0.1, max_samples: int = 1024):
+        super().__init__()
+        self.temperature = temperature
+        self.max_samples = max_samples
+
+    def forward(self, feature: torch.Tensor, label: torch.Tensor, ignore_label: int = -1) -> torch.Tensor:
+        """
+        feature: (B, D, H, W) or (N, D)
+        label:   (B, H, W)    or (B, 1, H, W) or (N,) — 0 / 1 / ignore_label
+        """
+        if feature.dim() == 4:
+            B, D, H, W = feature.shape
+            feature = feature.permute(0, 2, 3, 1).reshape(-1, D)  # (B*H*W, D)
+            label = label.reshape(-1)  # (B*H*W,)
+
+        # Remove ignore pixels
+        valid_mask = label != ignore_label
+        feature = feature[valid_mask]
+        label = label[valid_mask]
+
+        if feature.shape[0] < 2:
+            return torch.tensor(0.0, device=feature.device, dtype=feature.dtype)
+
+        feature, label = self._balance_samples(feature, label)
+
+        if feature.shape[0] < 2:
+            return torch.tensor(0.0, device=feature.device, dtype=feature.dtype)
+
+        M = feature.shape[0]
+        feature = F.normalize(feature, dim=1)
+        sim = torch.mm(feature, feature.T) / self.temperature
+        diag = torch.eye(M, dtype=torch.bool, device=feature.device)
+        pos_mask = (label.unsqueeze(0) == label.unsqueeze(1)) & ~diag
+
+        if not pos_mask.any():
+            return torch.tensor(0.0, device=feature.device)
+
+        denom = torch.logsumexp(sim.masked_fill(diag, float("-inf")), dim=1)
+        pos_mean = (sim * pos_mask.float()).sum(dim=1) / pos_mask.float().sum(dim=1).clamp(min=1)
+        valid = pos_mask.any(dim=1)
+        return (denom - pos_mean)[valid].mean()
+
+    def _balance_samples(self, feature: torch.Tensor, label: torch.Tensor):
+        """Up to max_samples/2 per class (stratified); if only one class, cap at max_samples."""
+        if label.numel() == 0:
+            return feature, label
+        per_class = max(1, self.max_samples // 2)
+        indices = []
+        classes = label.unique()
+        for cls in classes:
+            idx = (label == cls).nonzero(as_tuple=True)[0]
+            cap = per_class if len(classes) > 1 else self.max_samples
+            if len(idx) > cap:
+                perm = torch.randperm(len(idx), device=feature.device)[:cap]
+                idx = idx[perm]
+            indices.append(idx)
+        indices = torch.cat(indices)
+        return feature[indices], label[indices]

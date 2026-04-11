@@ -51,15 +51,11 @@ class DEMT_DAv2_CL_Trainer(Trainer):
         self.teacher_reliable_threshold = teacher_reliable_threshold
         self.student_reliable_threshold = student_reliable_threshold
         self.depth_learn_from_stu_weight = depth_learn_from_stu_weight
-        self.feature_layers = feature_layers
         self.contrastive_loss = SupContrastiveLoss()
         self.contrastive_rampup = contrastive_rampup
         self.contrastive_weight = contrastive_weight
 
         self._freeze_dav2_backbone()
-        # set_feature_layers is called in training() *before* student optimizer creation so
-        # SGD(stu_model.parameters()) includes the final proj_head tensors (see training()).
-
     def _freeze_dav2_backbone(self) -> None:
         """Ensure DAv2 backbone is always frozen."""
         if hasattr(self.tea_model, 'dav2_encoder'):
@@ -337,7 +333,6 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         teacher_reliable_threshold=float(cfg.get('Trainer.teacher_reliable_threshold', 0.75)),
         student_reliable_threshold=float(cfg.get('Trainer.student_reliable_threshold', 0.85)),
         depth_learn_from_stu_weight=float(cfg.get('Trainer.depth_learn_from_stu_weight', 0.3)),
-        feature_layers=int(cfg.get('Trainer.feature_layers', 2)),
         contrastive_rampup=float(cfg.get('Trainer.contrastive_rampup', 2000.0)),
         contrastive_weight=float(cfg.get('Trainer.contrastive_weight', 0.1)),
     )
