@@ -277,24 +277,24 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
     tea_optimizer = torch.optim.SGD(tea_model.parameters(), lr=cfg.get('optimizer.lr'),
                                     momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
-    scheduler_power = float(cfg.get('scheduler.power'))
-    scheduler = LambdaLR(optimizer, lambda e: max(0.0, pow(1.0 - min(e, total_iter) / total_iter, scheduler_power)))
-    tea_scheduler = LambdaLR(tea_optimizer, lambda e: max(0.0, pow(1.0 - min(e, nEpoch) / nEpoch, scheduler_power)))
+    # scheduler_power = float(cfg.get('scheduler.power'))
+    # scheduler = LambdaLR(optimizer, lambda e: max(0.0, pow(1.0 - min(e, total_iter) / total_iter, scheduler_power)))
+    # tea_scheduler = LambdaLR(tea_optimizer, lambda e: max(0.0, pow(1.0 - min(e, nEpoch) / nEpoch, scheduler_power)))
     
     # eta_min là mức LR nhỏ nhất ở cuối chặng đường (ví dụ: 1e-6)
 # T_max là tổng số bước (iter hoặc epoch) để curve hoàn thành 1 chu kỳ chữ S
 
-    # scheduler = CosineAnnealingLR(
-    #     optimizer, 
-    #     T_max=total_iter, 
-    #     eta_min=1e-6
-    # )
+    scheduler = CosineAnnealingLR(
+        optimizer, 
+        T_max=total_iter, 
+        eta_min=1e-5
+    )
 
-    # tea_scheduler = CosineAnnealingLR(
-    #     tea_optimizer, 
-    #     T_max=nEpoch, 
-    #     eta_min=1e-6
-    # )
+    tea_scheduler = CosineAnnealingLR(
+        tea_optimizer, 
+        T_max=nEpoch, 
+        eta_min=1e-5
+    )
 
     trainer = DAv2Fusion_MT_Trainer_addDepthTrainSignal(
         stu_model, tea_model, train_dataloader,
