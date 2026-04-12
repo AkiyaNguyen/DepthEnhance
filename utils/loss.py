@@ -8,7 +8,13 @@ Standard interface: pred and target/mask are probabilities in [0, 1]
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional
+from typing import Optional, Tuple
+
+
+def binary_entropy(prob: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    """Per-pixel Shannon entropy for Bernoulli prob (natural log). Max = ln(2) ≈ 0.693 when p=0.5."""
+    p = prob.clamp(min=eps, max=1.0 - eps)
+    return -(p * torch.log(p) + (1.0 - p) * torch.log(1.0 - p))
 
 class MSELoss(nn.Module):
     """MSE between probs (e.g. student vs teacher predictions)."""
@@ -258,6 +264,73 @@ class MemoryEfficientSupContrastiveLoss(nn.Module):
         for cls in classes:
             idx = (label == cls).nonzero(as_tuple=True)[0]
             cap = per_class if len(classes) > 1 else self.max_samples
+            if len(idx) > cap:
+                perm = torch.randperm(len(idx), device=feature.device)[:cap]
+                idx = idx[perm]
+            indices.append(idx)
+        indices = torch.cat(indices)
+        return feature[indices], label[indices]
+
+
+class MemoryEfficientSupContrastive3ClassLoss(nn.Module):
+    """
+    Labels in {0, 1, 2} (and optional ignore_label for dense maps).
+    Features: (N, C) patch embeddings or (B, C, H, W) dense (flattened internally).
+    Stratified subsampling splits max_samples across present classes (up to 3).
+    """
+
+    def __init__(self, temperature: float = 0.1, max_samples: int = 1024):
+        super().__init__()
+        self.temperature = temperature
+        self.max_samples = max_samples
+
+    def forward(self, feature: torch.Tensor, label: torch.Tensor, ignore_label: float = -1.0) -> torch.Tensor:
+        if feature.dim() == 4:
+            B, D, H, W = feature.shape
+            feature = feature.permute(0, 2, 3, 1).reshape(-1, D)
+            label = label.reshape(-1)
+        elif feature.dim() == 2:
+            if label.dim() != 1 or label.shape[0] != feature.shape[0]:
+                raise ValueError("label must be 1D with length N when feature is (N, C)")
+        else:
+            raise ValueError("feature must be (N, C) or (B, C, H, W)")
+
+        valid_mask = label != ignore_label
+        feature = feature[valid_mask]
+        label = label[valid_mask]
+
+        if feature.shape[0] < 2:
+            return torch.tensor(0.0, device=feature.device, dtype=feature.dtype)
+
+        feature, label = self._balance_samples_multi(feature, label)
+
+        if feature.shape[0] < 2:
+            return torch.tensor(0.0, device=feature.device, dtype=feature.dtype)
+
+        M = feature.shape[0]
+        feature = F.normalize(feature, dim=1)
+        sim = torch.mm(feature, feature.T) / self.temperature
+        diag = torch.eye(M, dtype=torch.bool, device=feature.device)
+        pos_mask = (label.unsqueeze(0) == label.unsqueeze(1)) & ~diag
+
+        if not pos_mask.any():
+            return torch.tensor(0.0, device=feature.device, dtype=feature.dtype)
+
+        denom = torch.logsumexp(sim.masked_fill(diag, float("-inf")), dim=1)
+        pos_mean = (sim * pos_mask.float()).sum(dim=1) / pos_mask.float().sum(dim=1).clamp(min=1)
+        valid = pos_mask.any(dim=1)
+        return (denom - pos_mean)[valid].mean()
+
+    def _balance_samples_multi(self, feature: torch.Tensor, label: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if label.numel() == 0:
+            return feature, label
+        classes = label.unique()
+        n_cls = int(classes.numel())
+        per_class = max(1, self.max_samples // max(n_cls, 1))
+        indices = []
+        for cls in classes:
+            idx = (label == cls).nonzero(as_tuple=True)[0]
+            cap = per_class if n_cls > 1 else self.max_samples
             if len(idx) > cap:
                 perm = torch.randperm(len(idx), device=feature.device)[:cap]
                 idx = idx[perm]
