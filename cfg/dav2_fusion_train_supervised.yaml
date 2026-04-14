@@ -41,7 +41,7 @@ optimizer:
   momentum: 0.9
 
 scheduler:
-  power: 0.9
+  eta_min: 1.0e-5
 
 Hook:
   SupervisedEvalHook:
@@ -72,7 +72,7 @@ Hook:
       dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
       description: 'Fully supervised baseline for DAv2Fusion teacher model'
 
-hyperparameter_sweeping:
+hyperparameter_sweep:
   seed:
     method: suggest_categorical
     params:

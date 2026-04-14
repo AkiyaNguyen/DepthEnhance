@@ -9,14 +9,15 @@ import typing
 import argparse
 
 from utils.common import *
+from utils.hyperparameter_sweep import apply_optuna_hyperparameter_sweep
 from utils.dpa import dpa
 import torch
 import torch.nn as nn
 import optuna
 import mlflow
 
-from torch.optim.lr_scheduler import LambdaLR
-from utils.ramps import sigmoid_rampup
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from utils.ramps import sigmoid_rampup, ramp_epochs_to_iters
 
 from utils.build_dataset import build_dataset
 from utils.loss import MSELoss, BCEDiceLoss
@@ -30,7 +31,7 @@ class DepthEnhance_MT_Trainer_EMAEncoderOnly(Trainer):
     Teacher returns a single tensor (no dict). EMA copies student encoder -> teacher rgb_encoder only.
     """
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
-                 consistency_rampup, consistency, fea_sim_weight: float, tea_scheduler=None, **kwargs) -> None:
+                 iters_per_epoch: int, consistency_rampup_epochs, consistency, fea_sim_weight: float, tea_scheduler=None, **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
         self.stu_model = stu_model
         self.tea_model = tea_model
@@ -41,7 +42,7 @@ class DepthEnhance_MT_Trainer_EMAEncoderOnly(Trainer):
         self.tea_scheduler = tea_scheduler
         self.ema_alpha = ema_alpha
         self.labeled_bs = self.train_dataloader.batch_sampler.primary_batch_size
-        self.consistency_rampup = consistency_rampup
+        self.consistency_rampup = ramp_epochs_to_iters(float(consistency_rampup_epochs), int(iters_per_epoch))
         self.consistency = consistency
         self.fea_sim_weight = fea_sim_weight
         self.class_criterion = BCEDiceLoss()
@@ -229,10 +230,7 @@ class MeanTeacherEvalHook_EMAEncoderOnly(EvalHook):
 
 def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     if trial is not None:
-        sweep_config = cfg.get('hyperparameter_sweeping', {})
-        for key, settings in sweep_config.items():
-            suggested_value = getattr(trial, settings['method'])(**settings['params'])
-            cfg.set(key, suggested_value)
+        apply_optuna_hyperparameter_sweep(cfg, trial)
 
     print(cfg.all_config())
     set_seed(cfg.get('seed'))
@@ -254,11 +252,12 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
-    tea_depth_branch_optimizer = torch.optim.SGD(tea_model.parameters(), lr=cfg.get('optimizer.lr'),
-                                                momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
-    scheduler_power = float(cfg.get('scheduler.power'))
-    scheduler = LambdaLR(optimizer, lambda e: max(0.0, 1.0 - pow(min(e, total_iter) / total_iter, scheduler_power)))
-    tea_depth_branch_scheduler = LambdaLR(tea_depth_branch_optimizer, lambda e: max(0.0, 1.0 - pow(min(e, nEpoch) / nEpoch, scheduler_power)))
+    tea_depth_branch_optimizer = torch.optim.SGD(tea_model.parameters(), lr=cfg.get('tea_optimizer.lr', cfg.get('optimizer.lr')),
+                                                momentum=cfg.get('tea_optimizer.momentum', cfg.get('optimizer.momentum')),
+                                                weight_decay=cfg.get('tea_optimizer.weight_decay', cfg.get('optimizer.weight_decay')))
+    eta_min = float(cfg.get('scheduler.eta_min', 1e-5))
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_iter, eta_min=eta_min)
+    tea_depth_branch_scheduler = CosineAnnealingLR(tea_depth_branch_optimizer, T_max=nEpoch, eta_min=eta_min)
 
     accelerator = Accelerator()
 
@@ -279,7 +278,8 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         optimizer, tea_depth_branch_optimizer,
         scheduler, nEpoch,
         ema_alpha=float(cfg.get('Trainer.ema_decay', 0.999)),
-        consistency_rampup=float(cfg.get('Trainer.consistency_rampup')),
+        iters_per_epoch=iters_per_epoch,
+        consistency_rampup_epochs=float(cfg.get('Trainer.consistency_rampup_epochs')),
         consistency=float(cfg.get('Trainer.consistency')),
         fea_sim_weight=float(cfg.get('Trainer.fea_sim_weight', 0.5)),
         tea_scheduler=tea_depth_branch_scheduler,

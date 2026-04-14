@@ -16,6 +16,11 @@ ramp length in the same format, and returns a multiplier between
 import numpy as np
 
 
+def ramp_epochs_to_iters(epochs: float, iters_per_epoch: int) -> float:
+    """Convert a ramp duration from whole epochs to optimizer steps (iterations)."""
+    return float(epochs) * float(iters_per_epoch)
+
+
 def sigmoid_rampup(current, rampup_length):
     """Exponential rampup from https://arxiv.org/abs/1610.02242"""
     if rampup_length == 0:

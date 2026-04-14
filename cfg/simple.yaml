@@ -36,10 +36,10 @@ optimizer:
   momentum: 0.9
 
 scheduler:
-  power: 0.9
+  eta_min: 1.0e-5
 
 Trainer:
-  consistency_rampup: 2000.0 #
+  consistency_rampup_epochs: 75.0
   consistency: 12.5 #
   ema_decay: 0.999 
   # weight-decay: 0.0001

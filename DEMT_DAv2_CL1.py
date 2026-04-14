@@ -9,14 +9,15 @@ import typing
 import argparse
 
 from utils.common import *
+from utils.hyperparameter_sweep import apply_optuna_hyperparameter_sweep
 from utils.dpa import apa_cutmix
 import torch
 import torch.nn as nn
 import optuna
 import mlflow
 
-from torch.optim.lr_scheduler import LambdaLR
-from utils.ramps import sigmoid_rampup
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from utils.ramps import sigmoid_rampup, ramp_epochs_to_iters
 
 from utils.build_dataset import build_dataset
 from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss, MemoryEfficientSupContrastiveLoss
@@ -28,8 +29,8 @@ class DEMT_DAv2_CL1_Trainer(Trainer):
     """
 
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
-                 consistency_rampup, consistency, tea_scheduler=None, teacher_reliable_threshold=0.75,
-                 student_reliable_threshold=0.85, depth_learn_from_stu_weight=1.0, feature_layers=2, contrastive_rampup=2000.0, contrastive_weight=0.1,
+                 iters_per_epoch: int, consistency_rampup_epochs, consistency, tea_scheduler=None, teacher_reliable_threshold=0.75,
+                 student_reliable_threshold=0.85, depth_learn_from_stu_weight=1.0, feature_layers=2, contrastive_rampup_epochs=16.0, contrastive_weight=0.1,
                  max_samples=1024, contrastive_temperature=0.1,
                  **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
@@ -42,7 +43,7 @@ class DEMT_DAv2_CL1_Trainer(Trainer):
         self.tea_scheduler = tea_scheduler
         self.ema_alpha = ema_alpha
         self.labeled_bs = self.train_dataloader.batch_sampler.primary_batch_size
-        self.consistency_rampup = consistency_rampup
+        self.consistency_rampup = ramp_epochs_to_iters(float(consistency_rampup_epochs), int(iters_per_epoch))
         self.consistency = consistency
         self.class_criterion = WeightedBCEDiceLoss()
         self.consistency_criterion = MSELoss()
@@ -57,7 +58,7 @@ class DEMT_DAv2_CL1_Trainer(Trainer):
             temperature=contrastive_temperature,
             max_samples=max_samples,
         )
-        self.contrastive_rampup = contrastive_rampup
+        self.contrastive_rampup = ramp_epochs_to_iters(float(contrastive_rampup_epochs), int(iters_per_epoch))
         self.contrastive_weight = contrastive_weight
 
         self._freeze_dav2_backbone()
@@ -290,10 +291,7 @@ class MeanTeacherEvalHook_DAv2_addDepthTrainSignal(EvalHook):
 
 def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     if trial is not None:
-        sweep_config = cfg.get('hyperparameter_sweeping', {})
-        for key, settings in sweep_config.items():
-            suggested_value = getattr(trial, settings['method'])(**settings['params'])
-            cfg.set(key, suggested_value)
+        apply_optuna_hyperparameter_sweep(cfg, trial)
 
     print(cfg.all_config())
     device = get_proper_device(cfg.get('device'))
@@ -320,24 +318,27 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
-    tea_optimizer = torch.optim.SGD(tea_model.parameters(), lr=cfg.get('optimizer.lr'),
-                                    momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
-    scheduler_power = float(cfg.get('scheduler.power'))
-    scheduler = LambdaLR(optimizer, lambda e: max(0.0, 1.0 - pow(min(e, total_iter) / total_iter, scheduler_power)))
-    tea_scheduler = LambdaLR(tea_optimizer, lambda e: max(0.0, 1.0 - pow(min(e, nEpoch) / nEpoch, scheduler_power)))
+    tea_optimizer = torch.optim.SGD(tea_model.parameters(), lr=cfg.get('tea_optimizer.lr', cfg.get('optimizer.lr')),
+                                momentum=cfg.get('tea_optimizer.momentum', cfg.get('optimizer.momentum')),
+                                weight_decay=cfg.get('tea_optimizer.weight_decay', cfg.get('optimizer.weight_decay')))
+    eta_min = float(cfg.get('scheduler.eta_min', 1e-5))
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_iter, eta_min=eta_min)
+    tea_scheduler = CosineAnnealingLR(tea_optimizer, T_max=nEpoch, eta_min=eta_min)
 
     trainer = DEMT_DAv2_CL1_Trainer(
         stu_model, tea_model, train_dataloader,
         optimizer, tea_optimizer,
         scheduler, nEpoch,
         ema_alpha=float(cfg.get('Trainer.ema_decay', 0.999)),
-        consistency_rampup=float(cfg.get('Trainer.consistency_rampup')),
+        iters_per_epoch=iters_per_epoch,
+        consistency_rampup_epochs=float(cfg.get('Trainer.consistency_rampup_epochs')),
         consistency=float(cfg.get('Trainer.consistency')),
         tea_scheduler=tea_scheduler,
         teacher_reliable_threshold=float(cfg.get('Trainer.teacher_reliable_threshold', 0.75)),
         student_reliable_threshold=float(cfg.get('Trainer.student_reliable_threshold', 0.85)),
         depth_learn_from_stu_weight=float(cfg.get('Trainer.depth_learn_from_stu_weight', 0.3)),
-        contrastive_rampup=float(cfg.get('Trainer.contrastive_rampup', 2000.0)),
+        feature_layers=fl,
+        contrastive_rampup_epochs=float(cfg.get('Trainer.contrastive_rampup_epochs', 16.0)),
         contrastive_weight=float(cfg.get('Trainer.contrastive_weight', 0.1)),
         max_samples=int(cfg.get('Trainer.max_samples', 1024)),
         contrastive_temperature=float(cfg.get('Trainer.contrastive_temperature', 0.1)),

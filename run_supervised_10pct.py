@@ -13,9 +13,10 @@ import copy
 from utils.hook import ExtendMLFlowLoggerHook
 from utils import loss
 from utils.common import *
+from utils.hyperparameter_sweep import apply_optuna_hyperparameter_sweep
 import torch
 import models
-from torch.optim.lr_scheduler import LambdaLR
+from torch.optim.lr_scheduler import CosineAnnealingLR
 import optuna
 from utils.build_dataset_supervised import build_dataset_supervised
 from test.eval import evaluate
@@ -148,10 +149,7 @@ class SmartSaveHook(HookBase):
 
 def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     if trial is not None:
-        sweep_config = cfg.get('hyperparameter_sweeping', {})
-        for key, settings in sweep_config.items():
-            suggested_value = getattr(trial, settings['method'])(**settings['params'])
-            cfg.set(key, suggested_value)
+        apply_optuna_hyperparameter_sweep(cfg, trial)
 
     print(cfg.all_config())
     device = get_proper_device(cfg.get('device'))
@@ -178,11 +176,8 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         momentum=cfg.get('optimizer.momentum'),
         weight_decay=cfg.get('optimizer.weight_decay')
     )
-    scheduler_power = float(cfg.get('scheduler.power', 0.9))
-    scheduler = LambdaLR(
-        optimizer,
-        lambda e: max(0.0, 1.0 - pow(min(e, total_iter) / total_iter, scheduler_power))
-    )
+    eta_min = float(cfg.get('scheduler.eta_min', 1e-5))
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_iter, eta_min=eta_min)
 
     class_criterion = getattr(loss, cfg.get('Trainer.class_criterion', 'BCEDiceLoss'))()
 

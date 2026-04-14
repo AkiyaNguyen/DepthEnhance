@@ -41,7 +41,7 @@ optimizer:
   momentum: 0.9
 
 scheduler:
-  power: 0.9
+  eta_min: 1.0e-5
  
 Hook:
   SupervisedEvalHook:
@@ -77,7 +77,7 @@ Hook:
       dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
       description: 'Fully supervised 10pct baseline with ExtendMLFlowLoggerHook'
 
-hyperparameter_sweeping:
+hyperparameter_sweep:
   # model.name:
   #   method: suggest_categorical
   #   params:

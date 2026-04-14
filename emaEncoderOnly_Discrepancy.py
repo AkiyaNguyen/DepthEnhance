@@ -306,7 +306,7 @@
 
 # def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 #     if trial is not None:
-#         sweep_config = cfg.get('hyperparameter_sweeping', {})
+#         sweep_config = cfg.get('hyperparameter_sweep', {})
 #         for key, settings in sweep_config.items():
 #             suggested_value = getattr(trial, settings['method'])(**settings['params'])
 #             cfg.set(key, suggested_value)

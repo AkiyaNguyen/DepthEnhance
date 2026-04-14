@@ -9,14 +9,15 @@ import typing
 import argparse
 
 from utils.common import *
+from utils.hyperparameter_sweep import apply_optuna_hyperparameter_sweep
 from utils.dpa import dpa, apa_cutmix
 import torch
 import torch.nn as nn
 import optuna
 import mlflow
 
-from torch.optim.lr_scheduler import LambdaLR
-from utils.ramps import sigmoid_rampup
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from utils.ramps import sigmoid_rampup, ramp_epochs_to_iters
 
 from utils.build_dataset import build_dataset
 from utils.loss import MSELoss, BCEDiceLoss
@@ -29,7 +30,7 @@ class MeanTeacherTrainer_EMAEncoderOnly_noDepth(Trainer):
     EMA copies entire student model -> teacher model
     """
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, scheduler, num_epochs, ema_alpha,
-                 consistency_rampup, consistency, class_criterion, **kwargs) -> None:
+                 iters_per_epoch: int, consistency_rampup_epochs, consistency, class_criterion, **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
         self.stu_model = stu_model
         self.tea_model = tea_model
@@ -40,7 +41,7 @@ class MeanTeacherTrainer_EMAEncoderOnly_noDepth(Trainer):
         # self.tea_scheduler = tea_scheduler
         self.ema_alpha = ema_alpha
         self.labeled_bs = self.train_dataloader.batch_sampler.primary_batch_size
-        self.consistency_rampup = consistency_rampup
+        self.consistency_rampup = ramp_epochs_to_iters(float(consistency_rampup_epochs), int(iters_per_epoch))
         self.consistency = consistency
         # self.fea_sim_weight = fea_sim_weight
         self.class_criterion = class_criterion
@@ -220,10 +221,7 @@ class MeanTeacherEvalHook_EMAEncoderOnly(EvalHook):
 
 def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     if trial is not None:
-        sweep_config = cfg.get('hyperparameter_sweeping', {})
-        for key, settings in sweep_config.items():
-            suggested_value = getattr(trial, settings['method'])(**settings['params'])
-            cfg.set(key, suggested_value)
+        apply_optuna_hyperparameter_sweep(cfg, trial)
 
     print(cfg.all_config())
     device = get_proper_device(cfg.get('device'))
@@ -245,15 +243,16 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
-    scheduler_power = float(cfg.get('scheduler.power'))
-    scheduler = LambdaLR(optimizer, lambda e: max(0.0, 1.0 - pow(min(e, total_iter) / total_iter, scheduler_power)))
+    eta_min = float(cfg.get('scheduler.eta_min', 1e-5))
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_iter, eta_min=eta_min)
 
     trainer = MeanTeacherTrainer_EMAEncoderOnly_noDepth(
         stu_model, tea_model, train_dataloader,
         optimizer,
         scheduler, nEpoch,
         ema_alpha=float(cfg.get('Trainer.ema_decay', 0.999)),
-        consistency_rampup=float(cfg.get('Trainer.consistency_rampup')),
+        iters_per_epoch=iters_per_epoch,
+        consistency_rampup_epochs=float(cfg.get('Trainer.consistency_rampup_epochs')),
         consistency=float(cfg.get('Trainer.consistency')),
         class_criterion=getattr(loss, cfg.get('Trainer.class_criterion', 'WeightedBCEDiceLoss')),
     )

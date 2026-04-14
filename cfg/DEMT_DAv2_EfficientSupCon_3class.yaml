@@ -40,19 +40,22 @@ optimizer:
   weight_decay: 0.0001
   momentum: 0.9
 
+tea_optimizer:
+  lr: 0.005
+  weight_decay: 0.0001
+  momentum: 0.9
+
 scheduler:
-  power: 0.9
+  eta_min: 1.0e-5
 
 Trainer:
-  consistency_rampup: 5000.0
-  consistency: 2
+  consistency_rampup_epochs: 75.0
   ema_decay: 0.999
   teacher_reliable_threshold: 0.75
   student_reliable_threshold: 0.85
   depth_learn_from_stu_weight: 0.3
   contrastive_weight: 0.1
-  contrastive_rampup: 2000.0
-  max_samples: 512
+  contrastive_rampup_epochs: 75.0
   contrastive_temperature: 0.1
   # Optional override; default matches model.stu_model.feature_layers. Patch side D = 2 ** (feature_layers - 1).
   # feature_layers: 2
@@ -99,8 +102,9 @@ Hook:
 
 score_criteria: test_stu_Dice
 
-hyperparameter_sweeping:
-  model.stu_model.feature_layers:
+# Sweep keys use / between segments; they map to dotted config paths (e.g. model/stu_model/feature_layers -> model.stu_model.feature_layers).
+hyperparameter_sweep:
+  model/stu_model/feature_layers:
     method: suggest_categorical
     params:
       name: feature_layers
