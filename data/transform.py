@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 import numbers
 from torchvision import transforms
+from torchvision.transforms import InterpolationMode
 
 class ToTensor(object):
     def __init__(self):
@@ -22,7 +23,20 @@ class Resize(object):
     def __init__(self, size):
         self.size = size
     def __call__(self, data):
-        return {key: F.resize(data[key], self.size) for key in data.keys()}
+        result = {}
+        for key, value in data.items():
+            width, height = value.size
+            side = max(width, height)
+            pad_left = (side - width) // 2
+            pad_right = side - width - pad_left
+            pad_top = (side - height) // 2
+            pad_bottom = side - height - pad_top
+
+            square_value = F.pad(value, [pad_left, pad_top, pad_right, pad_bottom], fill=0)
+            interpolation = InterpolationMode.NEAREST if key in ('label', 'mask') else InterpolationMode.BILINEAR
+            result[key] = F.resize(square_value, self.size, interpolation=interpolation)
+
+        return result
 
 class RandomHorizontalFlip(object):
     def __init__(self, p=0.5):
@@ -72,26 +86,31 @@ class RandomRotation(object):
 
 class RandomZoom(object):
     def __init__(self, zoom=(0.8, 1.2)):
-        self.min, self.max = zoom[0], zoom[1]
+        self.zoom_range = zoom
     def __call__(self, data):
         if random.random() < 0.5:
-            for item in data.keys():
+            zoom_factor = random.uniform(self.zoom_range[0], self.zoom_range[1])
+            for key, value in data.items():
                 # Keep original mode to support both RGB and single-channel inputs (e.g. depth).
-                pil_img = data[item]
+                pil_img = value
                 img = np.array(pil_img)
-                zoom = random.uniform(self.min, self.max)
-                img = clipped_zoom(img, zoom)
+                order = 0 if key in ('label', 'mask') else 1
+                img = clipped_zoom(img, zoom_factor, order=order)
                 img = Image.fromarray(img.astype('uint8'), mode=pil_img.mode)
-                data[item] = img
+                data[key] = img
 
         return data
 
 
-def clipped_zoom(img, zoom_factor, **kwargs):
+def clipped_zoom(img, zoom_factor, order=1):
     h, w = img.shape[:2]
 
-
-    zoom_tuple = (zoom_factor,) * 2 + (1,) * (img.ndim - 2)
+    if img.ndim == 2:
+        zoom_tuple = (zoom_factor, zoom_factor)
+    elif img.ndim == 3:
+        zoom_tuple = (zoom_factor, zoom_factor, 1)
+    else:
+        zoom_tuple = (zoom_factor,) * 2 + (1,) * max(0, img.ndim - 2)
 
 
     if zoom_factor < 1:
@@ -103,7 +122,7 @@ def clipped_zoom(img, zoom_factor, **kwargs):
         left = (w - zw) // 2
 
         out = np.zeros_like(img)
-        out[top:top + zh, left:left + zw] = scipy.ndimage.zoom(img, zoom_tuple, **kwargs)
+        out[top:top + zh, left:left + zw] = scipy.ndimage.zoom(img, zoom_tuple, order=order)
 
     elif zoom_factor > 1:
 
@@ -112,7 +131,7 @@ def clipped_zoom(img, zoom_factor, **kwargs):
         top = (h - zh) // 2
         left = (w - zw) // 2
 
-        zoom_in = scipy.ndimage.zoom(img[top:top + zh, left:left + zw], zoom_tuple, **kwargs)
+        zoom_in = scipy.ndimage.zoom(img[top:top + zh, left:left + zw], zoom_tuple, order=order)
 
 
         if zoom_in.shape[0] >= h:
