@@ -381,7 +381,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         ema_alpha=float(cfg.get('Trainer.ema_decay', 0.999)),
         iters_per_epoch=iters_per_epoch,
         consistency_rampup_epochs=int(cfg.get('Trainer.consistency_rampup_epochs', 100)),
-        consistency=float(cfg.get('Trainer.consistency')),
+        consistency=float(cfg.get('Trainer.consistency', 2.0)),
         tea_scheduler=tea_scheduler,
         teacher_reliable_threshold=float(cfg.get('Trainer.teacher_reliable_threshold', 0.75)),
         student_reliable_threshold=float(cfg.get('Trainer.student_reliable_threshold', 0.85)),
@@ -479,8 +479,8 @@ if __name__ == '__main__':
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
-#                     seed=1111 \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
+#                     Hook.ExtendMLFlowLoggerHook.run_name='DAv2_BGCL' \
+#                     seed=3333 \
+#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DAv2_BGCL' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
