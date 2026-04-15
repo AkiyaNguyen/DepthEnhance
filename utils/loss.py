@@ -337,3 +337,4 @@ class MemoryEfficientSupContrastive3ClassLoss(nn.Module):
             indices.append(idx)
         indices = torch.cat(indices)
         return feature[indices], label[indices]
+

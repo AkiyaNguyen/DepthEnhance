@@ -53,6 +53,7 @@ class DEMT_DAv2_CL1_Trainer(Trainer):
         self.student_reliable_threshold = student_reliable_threshold
         self.depth_learn_from_stu_weight = depth_learn_from_stu_weight
         self.max_samples = max_samples
+        
         self.contrastive_temperature = contrastive_temperature
         self.contrastive_loss = MemoryEfficientSupContrastiveLoss(
             temperature=contrastive_temperature,

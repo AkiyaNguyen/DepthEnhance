@@ -21,6 +21,55 @@ import torch.nn.functional as F
 from utils.loss import binary_entropy
 
 
+def patch_fold(label: torch.Tensor, patch_size: int) -> torch.Tensor:
+    """
+    fold the label into patches
+    label: (B, 1, H, W) or (B, H, W)
+    patch_size: int
+    Returns:
+        (B * H // P * W // P, P * P)
+    """
+    if label.dim() == 3:
+        label = label.unsqueeze(1)
+    B, _, H, W = label.shape
+    P = int(patch_size)
+    if P <= 0:
+        raise ValueError(f"patch_size must be positive, got {P}")
+    if H % P != 0 or W % P != 0:
+        raise ValueError(f"H={H}, W={W} must be divisible by patch_size={P}")
+
+    x = label.reshape(B, 1, H // P, P, W // P, P)
+    x = x.permute(0, 2, 4, 3, 5).contiguous()
+    return x.reshape(-1, P * P)
+
+def average_entropy(prob: torch.Tensor) -> torch.Tensor:
+    """
+    mean entropy of the probability over the last dimension (normalize to [0,1])
+    """
+    ent = binary_entropy(prob)
+    ln2 = torch.log(prob.new_tensor(2.0))
+    return ent.mean(dim=-1) / ln2
+
+def classify_patch_type(probs: torch.Tensor, low_bd_thresh=0.25, high_bd_thresh=0.75, \
+    high_bg_thresh=0, low_fg_thresh=1, eps=1e-6) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    probs: (B, H, W, K)
+    "foreground", "background", "boundary"
+    """
+    low_bd_thresh = low_bd_thresh - eps
+    high_bd_thresh = high_bd_thresh + eps
+    low_fg_thresh = low_fg_thresh - eps
+    high_bg_thresh = high_bg_thresh + eps
+    
+    pseudo_labels = (probs >= 0.5).float()
+    average_prob = pseudo_labels.mean(dim=-1)
+    fg_mask = average_prob > low_fg_thresh
+    bg_mask = average_prob < high_bg_thresh
+    boundary_mask = (average_prob >= low_bd_thresh) & (average_prob <= high_bd_thresh)
+    
+    
+    return fg_mask, bg_mask, boundary_mask
+
 def three_class_after_elimination(
     frac: torch.Tensor,
     lo: float = 0.25,
