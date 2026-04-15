@@ -6,7 +6,7 @@ model:
   num_channels_output: 1
 data:
   root: ../polypdepth_dataset/
-  dataset: kvasir_SEG
+  dataset: kvasir_SEG 
   data2_dir: TrainDataset
   require_depth: true
   image_dirname: images
@@ -31,7 +31,7 @@ data:
 nEpoch: 300
 
 optimizer:
-  lr: 0.005 #
+  lr: 0.01 #
   weight_decay: 0.0001 #
   momentum: 0.9
 
@@ -39,7 +39,7 @@ scheduler:
   eta_min: 1.0e-5
 
 Trainer:
-  consistency_rampup_epochs: 75.0
+  consistency_rampup_epochs: 100
   consistency: 12.5 #
   ema_decay: 0.999 
   # weight-decay: 0.0001

@@ -34,12 +34,12 @@ data:
 nEpoch: 300
 
 optimizer:
-  lr: 0.005
+  lr: 0.01
   weight_decay: 0.0001
   momentum: 0.9
 
 tea_optimizer:
-  lr: 0.005
+  lr: 0.01
   weight_decay: 0.0001
   momentum: 0.9
 
@@ -47,7 +47,7 @@ scheduler:
   eta_min: 1.0e-5
 
 Trainer:
-  consistency_rampup_epochs: 75.0
+  consistency_rampup_epochs: 100
   consistency: 2
   ema_decay: 0.999
   teacher_reliable_threshold: 0.75
