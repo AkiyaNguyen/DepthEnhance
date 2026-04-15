@@ -1,6 +1,6 @@
 # Fully supervised ResNet34U_f with 10% labeled (same data split as MT for fair comparison)
 device: cuda
-seed: 8888
+seed: 3333
 
 model:
   name: ResNet34U_f   # run_supervised_10pct reads model.name (not model.stu_model.name)
@@ -36,7 +36,7 @@ nEpoch: 300
 score_criteria: test_Dice   # metric returned by training() for Optuna / reporting
 
 optimizer:
-  lr: 0.005
+  lr: 0.01
   weight_decay: 0.0001
   momentum: 0.9
 
@@ -78,17 +78,18 @@ Hook:
       description: 'Fully supervised 10pct baseline with ExtendMLFlowLoggerHook'
 
 hyperparameter_sweep:
-  # model.name:
-  #   method: suggest_categorical
-  #   params:
-  #     name: model_name
-  #     choices:
-  #       - DepthFusion_ResNet34U_f_EMAEncoderOnly
-  #       - DepthResidualSEFusion_ResNet34U_f_EMAEncoderOnly
   seed:
     method: suggest_categorical
     params:
       name: seed
       choices:
-        - 1111
-        - 2222
+      - 3333
+      - 1111
+  optimizer/lr:
+    method: suggest_categorical
+    params:
+      name: optimizer.lr
+      choices:
+      - 0.005
+      - 0.01
+

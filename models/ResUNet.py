@@ -169,7 +169,8 @@ class ResNet34U_f(nn.Module):
         self.feature_layers = None
         self.proj_head = None
 
-    def set_feature_layers(self, feature_layers: int, add_proj_head: bool = True):
+    def set_feature_layers(self, feature_layers: int, add_proj_head: bool = True,
+            middle_channels: int = 128, out_channels: int = 256):
         if not 1 <= feature_layers <= 5:
             raise ValueError("feature_layers must be in [1,5]")
         self.feature_layers = feature_layers
@@ -177,9 +178,9 @@ class ResNet34U_f(nn.Module):
         if add_proj_head:
             c = self.out_channel_list[feature_layers - 1]
             self.proj_head = nn.Sequential(
-                nn.Conv2d(c, 128, kernel_size=1),
+                nn.Conv2d(c, middle_channels, kernel_size=1),
                 nn.ReLU(),
-                nn.Conv2d(128, 256, kernel_size=1),
+                nn.Conv2d(middle_channels, out_channels, kernel_size=1),
             ).to(dev)
         else:
             self.proj_head = None

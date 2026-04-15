@@ -258,7 +258,6 @@ if __name__ == '__main__':
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \
 #                     Hook.ExtendMLFlowLoggerHook.run_name='supervised_10pct' \
-#                     Hook.StopTrainAtEpoch.stop_at_epoch=200 \
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='supervised_10pct' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/akiyanguyen/kagglerunningtemplate/edit' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=3

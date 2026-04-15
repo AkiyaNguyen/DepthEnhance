@@ -53,8 +53,7 @@ Trainer:
   teacher_reliable_threshold: 0.75
   student_reliable_threshold: 0.85
   depth_learn_from_stu_weight: 0.3
-  contrastive_weight: 1.0
-  unlabeled_certainty_threshold: 0.8
+  contrastive_weight: 0.1 
   contrastive_rampup_epochs: 60
   low_bd_thresh: 0.25
   high_bd_thresh: 0.75
