@@ -38,8 +38,9 @@ def patch_fold(label: torch.Tensor, patch_size: int) -> torch.Tensor:
     if H % P != 0 or W % P != 0:
         raise ValueError(f"H={H}, W={W} must be divisible by patch_size={P}")
 
-    x = label.reshape(B, 1, H // P, P, W // P, P)
-    x = x.permute(0, 2, 4, 3, 5).contiguous()
+    # Drop the singleton channel before reordering patch axes.
+    x = label.squeeze(1).reshape(B, H // P, P, W // P, P)
+    x = x.permute(0, 1, 3, 2, 4).contiguous()
     return x.reshape(-1, P * P)
 
 def average_entropy(prob: torch.Tensor) -> torch.Tensor:
