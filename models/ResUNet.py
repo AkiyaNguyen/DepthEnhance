@@ -169,7 +169,7 @@ class ResNet34U_f(nn.Module):
         self.feature_layers = None
         self.proj_head = None
 
-    def set_feature_layers(self, feature_layers: int, add_proj_head: bool = True,
+    def set_feature_layers(self, feature_layers: int, add_proj_head: bool = False,
             middle_channels: int = 128, out_channels: int = 256):
         if not 1 <= feature_layers <= 5:
             raise ValueError("feature_layers must be in [1,5]")
@@ -185,7 +185,7 @@ class ResNet34U_f(nn.Module):
         else:
             self.proj_head = None
 
-    def forward(self, x, fp=False):
+    def forward(self, x, fp=False, type='decoder'):
         if fp and self.feature_layers is None:
             raise ValueError("feature_layers is not set, please set it before forward")
 
@@ -199,12 +199,20 @@ class ResNet34U_f(nn.Module):
         out1 = self.outconv(d1)
 
         decoder_fea_layers = [None, d1, d2, d3, d4, d5]
-
+        rgb_encoder_fea_layers = [None, e1, e2, e3, e4, e5]
         if fp:
-            if self.proj_head is not None:
-                return torch.sigmoid(out1), self.proj_head(decoder_fea_layers[self.feature_layers])
+            if type == 'decoder':
+                fea = decoder_fea_layers[self.feature_layers]
+            elif type == 'encoder':
+                fea = rgb_encoder_fea_layers[self.feature_layers]
             else:
-                return torch.sigmoid(out1), decoder_fea_layers[self.feature_layers]
+                raise ValueError(f"Invalid type: {type}, allowed types are 'decoder', 'encoder'")
+
+            if self.proj_head is not None:
+                fea = self.proj_head(fea)
+
+            return torch.sigmoid(out1), fea
+            
         else:
             return torch.sigmoid(out1)
 
@@ -845,7 +853,7 @@ class DAv2Fusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
         # feats[3] = layer 12 (high-level, semantic/geometric)
         return feats
     
-    def forward(self, x, fp=False, feature_layers=1):
+    def forward(self, x, fp=False, feature_layers=1, type='mixed'):
         # --- RGB encoder ---
         e1, e2, e3, e4, e5 = self.rgb_encoder(x)
         # e1: [B,  64, 160, 160]
@@ -885,13 +893,22 @@ class DAv2Fusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
         dec2 = self.decoder2(torch.cat([dec3, f2], dim=1))
         dec1 = self.decoder1(torch.cat([dec2, e1], dim=1))
 
-        decoder_fea_layers = [None, dec1, dec2, dec3, dec4, dec5]
-
+        decoder_fea_layers = [dec1, dec2, dec3, dec4, dec5]
+        rgb_encoder_fea_layers = [e1,e2,e3,e4,e5]
+        mix_encoder_fea_layers = [e1, f2, f3, f4, f5]
         out = self.outconv(dec1)
         final_output = torch.sigmoid(out)
 
         if fp:
-            return final_output, decoder_fea_layers[feature_layers]
+            if type == 'decoder':
+                return final_output, decoder_fea_layers[feature_layers - 1]
+            elif type == 'rgb_encoder':
+                return final_output, rgb_encoder_fea_layers[feature_layers - 1]
+            elif type == 'mix_encoder':
+                return final_output, mix_encoder_fea_layers[feature_layers - 1]
+            else:
+                raise ValueError(f"Invalid type: {type}, allowed types are 'decoder', 'rgb_encoder', 'mix_encoder'")
+
         return final_output
 
         

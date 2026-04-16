@@ -24,6 +24,13 @@ from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss
 
 
 class DAv2Fusion_MT_Trainer_addConsistentSignal(Trainer):
+    """
+    Phase-1 consistency: (1) RGBD prediction MSE on unlabeled data; (2) masked MSE between
+    student and teacher *RGB encoder* features at index ``feature_layers`` (e.g. 5 = e5),
+    no projection head. Teacher uses ``type='rgb_encoder'`` so features match the student
+    RGB stem (not fusion or decoder features). ``fea_consist_weight`` scales only the
+    feature MSE term inside the ramped consistency sum.
+    """
 
     def __init__(
         self,
@@ -43,7 +50,7 @@ class DAv2Fusion_MT_Trainer_addConsistentSignal(Trainer):
         student_reliable_threshold=0.85,
         depth_learn_from_stu_weight=1.0,
         feature_layers: int = 3,
-        feature_consistency_weight: float = 1.0,
+        fea_consist_weight: float = 1.0,
         **kwargs,
     ) -> None:
         super().__init__(num_epochs, **kwargs)
@@ -66,7 +73,7 @@ class DAv2Fusion_MT_Trainer_addConsistentSignal(Trainer):
         self.student_reliable_threshold = student_reliable_threshold
         self.depth_learn_from_stu_weight = depth_learn_from_stu_weight
         self.feature_layers = int(feature_layers)
-        self.feature_consistency_weight = float(feature_consistency_weight)
+        self.fea_consist_weight = float(fea_consist_weight)
         self._freeze_dav2_backbone()
 
     def _freeze_dav2_backbone(self) -> None:
@@ -135,14 +142,17 @@ class DAv2Fusion_MT_Trainer_addConsistentSignal(Trainer):
             unlabeled_img_s = img_s[self.labeled_bs :]
             label = label[: self.labeled_bs]
 
-            stu_pred, stu_fea = self.stu_model(img_s, fp=True)
+            stu_pred, stu_fea = self.stu_model(img_s, fp=True, type="encoder")
             labeled_stu = stu_pred[: self.labeled_bs]
             unlabeled_stu = stu_pred[self.labeled_bs :]
             unlabeled_stu_fea = stu_fea[self.labeled_bs :]
 
             with torch.no_grad():
                 tea_output, tea_fea = self.tea_model(
-                    unlabeled_img, fp=True, feature_layers=self.feature_layers
+                    unlabeled_img,
+                    fp=True,
+                    feature_layers=self.feature_layers,
+                    type="rgb_encoder",
                 )
 
             unlabeled_img_s_cutmix, ema_pred_u_cutmix = apa_cutmix(
@@ -166,7 +176,7 @@ class DAv2Fusion_MT_Trainer_addConsistentSignal(Trainer):
 
             mask_feat = feature_grid_confidence_mask(tea_output, tea_fea.shape[2:])
             loss_feat = self.consistency_criterion(unlabeled_stu_fea, tea_fea, mask=mask_feat)
-            loss_consist = loss_consist_rgbd + self.feature_consistency_weight * loss_feat
+            loss_consist = loss_consist_rgbd + self.fea_consist_weight * loss_feat
 
             loss_consist_rgbd_cutmix = self.dpa_loss(
                 pred_u_cutmix, ema_pred_u_cutmix, mask=teacher_confidence_mask(ema_pred_u_cutmix)
@@ -319,7 +329,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     )
 
     feat_layers = int(cfg.get("model.stu_model.feature_layers", 3))
-    add_proj = bool(cfg.get("model.stu_model.add_proj_head", True))
+    add_proj = bool(cfg.get("model.stu_model.add_proj_head", False))
     middle_ch = int(cfg.get("model.stu_model.middle_channels", 64))
     proj_out_ch = int(cfg.get("model.stu_model.out_channels", 128))
     stu_model.set_feature_layers(
@@ -362,7 +372,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         student_reliable_threshold=float(cfg.get("Trainer.student_reliable_threshold", 0.85)),
         depth_learn_from_stu_weight=float(cfg.get("Trainer.depth_learn_from_stu_weight", 0.3)),
         feature_layers=feat_layers,
-        feature_consistency_weight=float(cfg.get("Trainer.feature_consistency_weight", 1.0)),
+        fea_consist_weight=float(cfg.get("Trainer.fea_consist_weight", 1.0)),
     )
     if cfg.get("Trainer.load_ckpt_path", None) is not None:
         trainer.load_Trainer_ckpt(torch.load(cfg.get("Trainer.load_ckpt_path")))
@@ -416,7 +426,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="DAv2 Fusion Mean Teacher + decoder feature consistency (DAv2_addConsistentSignal)."
+        description="DAv2 Fusion Mean Teacher + RGB encoder feature MSE (DAv2_addConsistentSignal)."
     )
     parser.add_argument("--optuna_trial_times", type=int, default=4, help="Optuna trials; 0 = no Optuna.")
     parser.add_argument("--config", type=str, default="cfg/DAv2_addConsistentSignal.yaml", help="Path to YAML config")
@@ -440,3 +450,15 @@ if __name__ == "__main__":
         print("  Params:")
         for key, value in trial.params.items():
             print(f"    {key}: {value}")
+
+
+#  !cd /kaggle/working/meanTeacherPolyp && \
+#     python DAv2_addConsistentSignal.py \
+#                     --optuna_trial_times 0\
+#                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
+#                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
+#                     data.dataset=kvasir_SEG \
+#                     Hook.ExtendMLFlowLoggerHook.run_name='DAv2_addConsistentSignal' \
+#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DAv2_addConsistentSignal' \
+#                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
+#                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
