@@ -6,6 +6,7 @@ model:
     name: ResNet34U_f
   tea_model:
     name: DAv2Fusion_ResNet34U_f_EMAEncoderOnly
+    dav2_model_name: 'depth-anything/Depth-Anything-V2-Small-hf'
   num_channels_output: 1
 data:
   root: ../polypdepth_dataset/

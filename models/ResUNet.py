@@ -762,41 +762,58 @@ class DepthResidualSEFusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
 
 class DAv2Fusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
     """
-    Teacher model replacing the ResNet-34 depth encoder with a frozen DAv2 ViT-S encoder.
-    
+    Teacher with a frozen Depth Anything V2 backbone (ViT-S or ViT-B) instead of a ResNet-34 depth encoder.
+
     Key design decisions:
     - DAv2 encoder is fully frozen; only projection layers + fusion blocks + decoder are trained.
-    - 4 intermediate ViT layers are extracted and projected to match ResNet-34 channel dims.
-    - e1 (160x160) is skipped for DAv2 fusion: upsampling from 22x22 by 7x is too aggressive.
-    - Inference uses RGB-only ResNet-34 student — no DAv2 at deployment time.
+    - Four ViT layers are projected to ResNet-34 stage widths and fused at e2..e5 (e1 skipped).
+    - Student at inference is RGB-only; DAv2 is training-time only on the teacher.
     """
+    dav2_choice = {
+        "depth-anything/Depth-Anything-V2-Small-hf": {
+            "dav2_dim": 384,
+            "layer_indices": [3, 6, 9, 12],
+            "proj_channels": [512, 256, 128, 64]
+        },
+        "depth-anything/Depth-Anything-V2-Base-hf": {
+            "dav2_dim": 768,
+            "layer_indices": [3, 6, 9, 12],
+            "proj_channels": [512, 256, 128, 64]
+        }
+    }
     def __init__(self, num_classes, dropout=0.1, dav2_model_name="depth-anything/Depth-Anything-V2-Small-hf"):
         super().__init__()
         
+        if dav2_model_name not in self.dav2_choice:
+            allowed = ", ".join(sorted(self.dav2_choice.keys()))
+            raise ValueError(
+                f"Unknown dav2_model_name={dav2_model_name!r}. "
+                f"Supported ids: {allowed}"
+            )
+        
         # RGB encoder — EMA-updated during SSL training (same as current architecture)
         self.rgb_encoder = encoder(num_classes=None)
-        
-        # DAv2 ViT-S backbone — frozen, used as privileged geometric feature extractor
+        # Frozen DAv2 backbone (privileged geometric features)
         
         dav2 = AutoModelForDepthEstimation.from_pretrained(dav2_model_name)
         self.dav2_encoder = dav2.backbone 
         for p in self.dav2_encoder.parameters():
             p.requires_grad = False
         
-        # Project DAv2 patch tokens [B, 484, 384] to match ResNet-34 channel dims at each level.
-        # ViT-S hidden dim = 384. We map 4 intermediate layers to e2..e5 (skip e1, see docstring).
-        # Layer indices used: 3, 6, 9, 12 (evenly spaced across 12 transformer blocks).
-        dav2_dim = 384
-        self.proj5 = self._make_proj(dav2_dim, 512)  # layer 12 → matches e5 (512ch, 10x10)
-        self.proj4 = self._make_proj(dav2_dim, 256)  # layer  9 → matches e4 (256ch, 20x20)
-        self.proj3 = self._make_proj(dav2_dim, 128)  # layer  6 → matches e3 (128ch, 40x40)
-        self.proj2 = self._make_proj(dav2_dim, 64)   # layer  3 → matches e2 ( 64ch, 80x80)
+        # Patch tokens → 1x1 conv to ResNet stage channels; spatial match via interpolate in forward().
+        self.dav2_dim = self.dav2_choice[dav2_model_name]['dav2_dim']
+        self.dav2_layer_indices = self.dav2_choice[dav2_model_name]['layer_indices']
+        self.proj_channels = self.dav2_choice[dav2_model_name]['proj_channels']
+        self.proj5 = self._make_proj(self.dav2_dim, self.proj_channels[0])  # layer 12 → matches e5 (512ch, 10x10)
+        self.proj4 = self._make_proj(self.dav2_dim, self.proj_channels[1])  # layer  9 → matches e4 (256ch, 20x20)
+        self.proj3 = self._make_proj(self.dav2_dim, self.proj_channels[2])  # layer  6 → matches e3 (128ch, 40x40)
+        self.proj2 = self._make_proj(self.dav2_dim, self.proj_channels[3])   # layer  3 → matches e2 ( 64ch, 80x80)
         
         # SE-guided fusion blocks — same as DepthFusion_ResNet34U_f_EMAEncoderOnly
-        self.fusion_block5 = SEFusionBlock(512, 512, 512)
-        self.fusion_block4 = SEFusionBlock(256, 256, 256)
-        self.fusion_block3 = SEFusionBlock(128, 128, 128)
-        self.fusion_block2 = SEFusionBlock(64,  64,  64)
+        self.fusion_block5 = SEFusionBlock(512, self.proj_channels[0], 512)
+        self.fusion_block4 = SEFusionBlock(256, self.proj_channels[1], 256)
+        self.fusion_block3 = SEFusionBlock(128, self.proj_channels[2], 128)
+        self.fusion_block2 = SEFusionBlock(64,  self.proj_channels[3],  64)
         
         # Standard U-Net decoder with skip connections
         self.decoder5 = DecoderBlock(512, 512)
@@ -824,29 +841,23 @@ class DAv2Fusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
     
     def _extract_dav2_features(self, x):
         """
-        Extract 4 intermediate hidden states from frozen DAv2 ViT-S.
-        
-        Input : x        [B, 3, 320, 320]
-        Output: list of 4 tensors, each [B, 384, 22, 22]
-        
-        Spatial grid: floor(320 / 14) = 22  →  22x22 = 484 patch tokens
-        HuggingFace returns 13 hidden states (index 0 = patch embedding, 1..12 = transformer layers).
-        CLS token at position 0 is dropped before reshape.
+        Four intermediate backbone hidden states as spatial maps (patch/14 grid; e.g. 22×22 for 320×320).
+        CLS dropped; channel width is ``self.dav2_dim`` (384 Small, 768 Base).
         """
         with torch.no_grad():
             hidden_states = self.dav2_encoder(
                 pixel_values=x,
                 output_hidden_states=True
-            ).hidden_states  # tuple of 13 x [B, 485, 384]
+            ).hidden_states
         
         feats = []
-        for idx in [3, 6, 9, 12]:
-            h = hidden_states[idx]       # [B, 485, 384]
-            h = h[:, 1:, :]             # drop CLS token → [B, 484, 384]
+        for idx in self.dav2_layer_indices:
+            h = hidden_states[idx]
+            h = h[:, 1:, :]             # drop CLS → [B, N, D]
             B, N, D = h.shape
-            h = h.permute(0, 2, 1)      # [B, 384, 484]
+            h = h.permute(0, 2, 1)      # [B, D, N]
             side = int(np.sqrt(N))
-            h = h.reshape(B, D, side, side) # [B, 384, side, side]
+            h = h.reshape(B, D, side, side)
             feats.append(h)
         
         # feats[0] = layer 3  (low-level, closer to edges/textures)
@@ -864,7 +875,7 @@ class DAv2Fusion_ResNet34U_f_EMAEncoderOnly(nn.Module):
 
         # --- DAv2 feature extraction (no gradient) ---
         dav2_feats = self._extract_dav2_features(x)
-        # each: [B, 384, 22, 22]
+        # each: [B, dav2_dim, H', W'] with H',W' from patch size (e.g. 22×22 @ 320, patch 14)
 
         # --- Project + bilinear resize to match ResNet spatial dims ---
         def proj_and_resize(proj_layer, feat, target_feat):

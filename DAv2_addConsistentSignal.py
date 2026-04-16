@@ -454,7 +454,7 @@ if __name__ == "__main__":
 
 #  !cd /kaggle/working/meanTeacherPolyp && \
 #     python DAv2_addConsistentSignal.py \
-#                     --optuna_trial_times 0\
+#                     --optuna_trial_times 2\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \

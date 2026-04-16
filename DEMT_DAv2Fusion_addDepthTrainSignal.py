@@ -268,7 +268,8 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     print(f"nEpoch: {nEpoch} | Iters/epoch: {iters_per_epoch} => total train steps: {total_iter}")
 
     stu_model = getattr(models, cfg.get('model.stu_model.name'))(num_classes=cfg.get('model.num_channels_output')).to(device)
-    tea_model = getattr(models, cfg.get('model.tea_model.name'))(num_classes=cfg.get('model.num_channels_output')).to(device)
+    tea_model = getattr(models, cfg.get('model.tea_model.name'))(num_classes=cfg.get('model.num_channels_output'), dav2_model_name=\
+        cfg.get('model.tea_model.dav2_model_name', 'depth-anything/Depth-Anything-V2-Small-hf')).to(device)
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
@@ -373,11 +374,11 @@ if __name__ == '__main__':
 #  !cd /kaggle/working/meanTeacherPolyp && \
 #     python DEMT_DAv2Fusion_addDepthTrainSignal.py \
 #                     --optuna_trial_times 0\
+#                     model.tea_model.dav2_model_name='depth-anything/Depth-Anything-V2-Base-hf' \
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \
 #                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
-#                     seed=1111 \
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
