@@ -84,11 +84,11 @@ Hook:
 score_criteria: test_stu_Dice
 
 hyperparameter_sweeping:
-  Trainer.contrastive_weight:
+  seed:
     method: suggest_categorical
     params:
-      name: contrastive_weight
+      name: seed
       choices:
-        - 0.5
-        - 1.0
-        - 1.5
+        - 3333
+        - 2222
+        - 1111
