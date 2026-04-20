@@ -23,14 +23,13 @@ from utils.build_dataset import build_dataset
 from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss
 
 
-class DAv2Fusion_MT_Trainer_addDepthTrainSignal(Trainer):
+class DEMT_DAv2_Trainer(Trainer):
     """
-    Mean Teacher trainer for DAv2Fusion_ResNet34U_f_EMAEncoderOnly.
-    Teacher forward uses RGB only; EMA copies student encoder -> teacher rgb_encoder only.
+    Mean Teacher trainer for DEMT_DAv2.
     """
 
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
-                 iters_per_epoch: int, consistency_rampup_epochs, consistency, tea_scheduler=None, teacher_reliable_threshold=0.75,
+                 iters_per_epoch: int, rampup_unit: str, consistency_rampup, consistency, tea_scheduler=None, teacher_reliable_threshold=0.75,
                  student_reliable_threshold=0.85, depth_learn_from_stu_weight=1.0, **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
         self.stu_model = stu_model
@@ -42,7 +41,7 @@ class DAv2Fusion_MT_Trainer_addDepthTrainSignal(Trainer):
         self.tea_scheduler = tea_scheduler
         self.ema_alpha = ema_alpha
         self.labeled_bs = self.train_dataloader.batch_sampler.primary_batch_size
-        self.consistency_rampup = ramp_epochs_to_iters(float(consistency_rampup_epochs), int(iters_per_epoch))
+
         self.consistency = consistency
         self.class_criterion = WeightedBCEDiceLoss()
         self.consistency_criterion = MSELoss()
@@ -53,6 +52,17 @@ class DAv2Fusion_MT_Trainer_addDepthTrainSignal(Trainer):
         self.depth_learn_from_stu_weight = depth_learn_from_stu_weight
         self._freeze_dav2_backbone()
 
+        self.consistency_rampup_iter = self._set_rampup(rampup_unit, consistency_rampup)
+
+        
+    def _set_rampup(self, rampup_unit: str, consistency_rampup: float):
+        if rampup_unit == 'epoch':
+            return ramp_epochs_to_iters(float(consistency_rampup), int(self.iters_per_epoch))
+        elif rampup_unit == 'iter':
+            return consistency_rampup
+        else:
+            raise ValueError(f"Invalid rampup_unit: {rampup_unit}")
+
     def _freeze_dav2_backbone(self) -> None:
         """Ensure DAv2 backbone is always frozen."""
         if hasattr(self.tea_model, 'dav2_encoder'):
@@ -60,7 +70,7 @@ class DAv2Fusion_MT_Trainer_addDepthTrainSignal(Trainer):
                 param.requires_grad_(False)
 
     def _get_current_consistency_weight(self, global_step):
-        return self.consistency * sigmoid_rampup(current=global_step, rampup_length=self.consistency_rampup)
+        return self.consistency * sigmoid_rampup(current=global_step, rampup_length=self.consistency_rampup_iter)
 
     def _update_ema_variable(self, global_step, model_a: nn.Module, model_b: nn.Module):
         coeff = min(1 - 1 / (global_step + 1), self.ema_alpha)
@@ -280,13 +290,14 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     scheduler = CosineAnnealingLR(optimizer, T_max=total_iter, eta_min=eta_min)
     tea_scheduler = CosineAnnealingLR(tea_optimizer, T_max=nEpoch, eta_min=eta_min)
 
-    trainer = DAv2Fusion_MT_Trainer_addDepthTrainSignal(
+    trainer = DEMT_DAv2_Trainer(
         stu_model, tea_model, train_dataloader,
         optimizer, tea_optimizer,
         scheduler, nEpoch,
         ema_alpha=float(cfg.get('Trainer.ema_decay', 0.999)),
         iters_per_epoch=iters_per_epoch,
-        consistency_rampup_epochs=float(cfg.get('Trainer.consistency_rampup_epochs')),
+        rampup_unit=cfg.get('Trainer.rampup_unit', 'epoch'),
+        consistency_rampup=float(cfg.get('Trainer.consistency_rampup')),
         consistency=float(cfg.get('Trainer.consistency', 2.0)),
         tea_scheduler=tea_scheduler,
         teacher_reliable_threshold=float(cfg.get('Trainer.teacher_reliable_threshold', 0.75)),
@@ -337,7 +348,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training (DAv2Fusion_ResNet34U_f_EMAEncoderOnly).')
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
-    parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2Fusion_addDepthTrainSignal.yaml', help='Path to YAML config')
+    parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
     cfg = Config(config_file=args.config, cli_overrides=unknown)
 
@@ -359,26 +370,26 @@ if __name__ == '__main__':
             print(f"    {key}: {value}")
 
 #  !cd /kaggle/working/meanTeacherPolyp && \
-#     python DEMT_DAv2Fusion_addDepthTrainSignal.py \
+#     python DEMT_DAv2.py \
 #                     --optuna_trial_times 3\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
+#                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2' \
 #                     Hook.StopTrainAtEpoch.stop_at_epoch=300 \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
+#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
 
 
 #  !cd /kaggle/working/meanTeacherPolyp && \
-#     python DEMT_DAv2Fusion_addDepthTrainSignal.py \
+#     python DEMT_DAv2.py \
 #                     --optuna_trial_times 0\
 #                     model.tea_model.dav2_model_name='depth-anything/Depth-Anything-V2-Base-hf' \
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2Fusion_addDepthTrainSignal' \
+#                     Hook.ExtendMLFlowLoggerHook.run_name='DAv2_with_Depth-Anything-V2-Base-hf' \
+#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DAv2_with_Depth-Anything-V2-Base-hf' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1

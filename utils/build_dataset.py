@@ -1,11 +1,11 @@
 import os
-import numpy as np
 import torch
 from data.transform import Resize, ToTensor
 from data import dataset
 from data.batch_sampler import TwoStreamBatchSampler
 from test.eval import ImageFolderDataset
 from torchvision import transforms
+import json
 
 # Helper function to get the number of labeled images
 def _labeled_num(train_num, cfg):
@@ -19,7 +19,14 @@ def _labeled_num(train_num, cfg):
         n -= 1
     return n
 
-
+def _get_list_name(cfg):
+    json_filename = cfg.get('data.json_filename', None)
+    if json_filename is not None:
+        with open(json_filename, 'r') as f:
+            list_name = json.load(f)
+    else:
+        list_name = None
+    return list_name
 
 def build_dataset(cfg):
     val_perc = int(cfg.get('data.val_split_perc', 0))
@@ -32,11 +39,12 @@ def build_dataset(cfg):
 
     train_dataloader, val_dataloader = None, None
     if val_perc == 0:
-        data_root = os.path.join(cfg.get('data.root'), cfg.get('data.data2_dir'), 'images')
+        list_name = _get_list_name(cfg)
+
         train_data = getattr(dataset, cfg.get('data.dataset'))(
             root=cfg.get('data.root'), data2_dir=cfg.get('data.data2_dir'),
             mode='train', require_depth=cfg.get('data.require_depth'), 
-            depth_dirname=cfg.get('data.depth_dirname', None), list_name=None)
+            depth_dirname=cfg.get('data.depth_dirname', None), list_name=list_name)
         train_num = len(train_data)
         print(f"Total training images: {train_num}")
         labeled_num = _labeled_num(train_num, cfg)
@@ -51,14 +59,21 @@ def build_dataset(cfg):
 
     elif val_perc < 100:
         print(f"Validation split: {val_perc}%")
-        data_root = os.path.join(cfg.get('data.root'), cfg.get('data.data2_dir'), 'images')
-        all_files = np.random.permutation([f for f in os.listdir(data_root) if f.endswith(('.png', '.jpg', '.jpeg'))]).tolist()
-        total_num = len(all_files)
+        data_root = os.path.join(cfg.get('data.root'), cfg.get('data.data2_dir'), cfg.get('data.image_dirname'))
+        list_name = _get_list_name(cfg)
+
+        if list_name is None:
+            list_name = sorted(
+                f
+                for f in os.listdir(data_root)
+                if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+            )
+        total_num = len(list_name)
         val_num = round(total_num * val_perc / 100)
         train_num = total_num - val_num
         print(f"Total training images: {train_num}, validation images: {val_num}")
-        val_files = all_files[:val_num]
-        train_files = all_files[val_num:]
+        val_files = list_name[:val_num]
+        train_files = list_name[val_num:]
         train_data = getattr(dataset, cfg.get('data.dataset'))(
             root=cfg.get('data.root'), data2_dir=cfg.get('data.data2_dir'),
             mode='train', require_depth=cfg.get('data.require_depth'),

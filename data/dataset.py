@@ -38,9 +38,11 @@ class kvasir_SEG(Dataset):
         self.gt_list = []
         self.mode = mode
 
-        self.images_list = os.listdir(os.path.join(self.data_path, image_dirname)) if list_name is None \
-            else list_name
-        self.images_list = sorted(self.images_list)
+        if list_name is None:
+            self.images_list = os.listdir(os.path.join(self.data_path, image_dirname))
+            self.images_list = sorted(self.images_list)
+        else:
+            self.images_list = list_name ## no sort list if specified
 
         for img_id in self.images_list:
             self.id_list.append(img_id.split('.')[0]) ## name without extension
