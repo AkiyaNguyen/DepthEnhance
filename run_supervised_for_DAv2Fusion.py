@@ -31,7 +31,7 @@ def _pred_for_loss_and_metrics(raw):
 
 
 class SupervisedTrainer_DAv2Fusion(Trainer):
-    """Fully supervised trainer for DAv2Fusion_ResNet34U_f_EMAEncoderOnly."""
+    """Fully supervised trainer for ResNet34U_f_ExtendDAv2."""
 
     def __init__(self, model, train_dataloader, optimizer, scheduler, num_epochs, class_criterion, **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
@@ -135,7 +135,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     model = getattr(
         models,
-        cfg.get('model.name', 'DAv2Fusion_ResNet34U_f_EMAEncoderOnly')
+        cfg.get('model.name', 'ResNet34U_f_ExtendDAv2')
     )(num_classes=cfg.get('model.num_channels_output', 1)).to(device)
 
     optimizer = torch.optim.SGD(

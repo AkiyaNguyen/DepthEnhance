@@ -47,7 +47,8 @@ scheduler:
   eta_min: 1.0e-5
 
 Trainer:
-  consistency_rampup_epochs: 100
+  rampup_unit: 'iter'   # epoch | iter
+  consistency_rampup: 5000  # epochs if rampup_unit epoch, else raw iterations
   consistency: 2 #
   ema_decay: 0.999 
   # Phase 1: mask teacher pseudo-labels (student learns only where teacher is confident).

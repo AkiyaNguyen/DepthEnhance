@@ -30,7 +30,7 @@ class MeanTeacherTrainer_EMAEncoderOnly_noDepth(Trainer):
     EMA copies entire student model -> teacher model
     """
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, scheduler, num_epochs, ema_alpha,
-                 iters_per_epoch: int, consistency_rampup_epochs, consistency, class_criterion, **kwargs) -> None:
+                 iters_per_epoch: int, rampup_unit: str, consistency_rampup, consistency, class_criterion, **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
         self.stu_model = stu_model
         self.tea_model = tea_model
@@ -40,16 +40,24 @@ class MeanTeacherTrainer_EMAEncoderOnly_noDepth(Trainer):
         self.scheduler = scheduler
         # self.tea_scheduler = tea_scheduler
         self.ema_alpha = ema_alpha
+        self.iters_per_epoch = int(iters_per_epoch)
         self.labeled_bs = self.train_dataloader.batch_sampler.primary_batch_size
-        self.consistency_rampup = ramp_epochs_to_iters(float(consistency_rampup_epochs), int(iters_per_epoch))
         self.consistency = consistency
+        self.consistency_rampup_iter = self._set_rampup(rampup_unit, float(consistency_rampup))
         # self.fea_sim_weight = fea_sim_weight
         self.class_criterion = class_criterion
         self.consistency_criterion = MSELoss()
         # self.dpa_loss = BCEDiceLoss()
 
+    def _set_rampup(self, rampup_unit: str, consistency_rampup: float):
+        if rampup_unit == 'epoch':
+            return ramp_epochs_to_iters(consistency_rampup, self.iters_per_epoch)
+        if rampup_unit == 'iter':
+            return consistency_rampup
+        raise ValueError(f"Invalid rampup_unit: {rampup_unit}")
+
     def _get_current_consistency_weight(self, global_step):
-        return self.consistency * sigmoid_rampup(current=global_step, rampup_length=self.consistency_rampup)
+        return self.consistency * sigmoid_rampup(current=global_step, rampup_length=self.consistency_rampup_iter)
 
     def _update_ema_variable(self, global_step, model_a: nn.Module, model_b: nn.Module):
         coeff = min(1 - 1 / (global_step + 1), self.ema_alpha)
@@ -252,9 +260,10 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         scheduler, nEpoch,
         ema_alpha=float(cfg.get('Trainer.ema_decay', 0.999)),
         iters_per_epoch=iters_per_epoch,
-        consistency_rampup_epochs=float(cfg.get('Trainer.consistency_rampup_epochs')),
+        rampup_unit=str(cfg.get('Trainer.rampup_unit', 'epoch')),
+        consistency_rampup=float(cfg.get('Trainer.consistency_rampup')),
         consistency=float(cfg.get('Trainer.consistency')),
-        class_criterion=getattr(loss, cfg.get('Trainer.class_criterion', 'WeightedBCEDiceLoss')),
+        class_criterion=getattr(loss, cfg.get('Trainer.class_criterion', 'WeightedBCEDiceLoss'))(),
     )
     if cfg.get('Trainer.load_ckpt_path', None) is not None:
         trainer.load_Trainer_ckpt(torch.load(cfg.get('Trainer.load_ckpt_path')))

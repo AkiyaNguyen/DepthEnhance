@@ -3,7 +3,7 @@ device: cuda
 seed: 8888
 
 model:
-  name: DAv2Fusion_ResNet34U_f_EMAEncoderOnly
+  name: ResNet34U_f_ExtendDAv2
   num_channels_output: 1
 
 data:

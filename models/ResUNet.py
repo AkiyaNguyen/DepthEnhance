@@ -879,7 +879,7 @@ if __name__ == "__main__":
     models_to_test = [
         ("A (RGB)",    ResNet34U_f(num_classes=1),                      (rgb,)),
         ("B (Depth)",  DepthFusion_ResNet34U_f_EMAEncoderOnly(num_classes=1), (rgb, depth)),
-        ("C (DAv2)",   DAv2Fusion_ResNet34U_f_EMAEncoderOnly(num_classes=1),  (rgb,)),
+        ("C (DAv2)",   ResNet34U_f_ExtendDAv2(num_classes=1),  (rgb,)),
     ]
 
     for name, model, inp in models_to_test:

@@ -32,7 +32,7 @@ class DepthFusion_MT_Trainer_addDepthTrainSignal(Trainer):
     teacher toward rounded student targets where student_reliable_threshold agreement holds.
     """
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
-                 iters_per_epoch: int, consistency_rampup_epochs, consistency, tea_scheduler=None, teacher_reliable_threshold=0.75,
+                 iters_per_epoch: int, rampup_unit: str, consistency_rampup, consistency, tea_scheduler=None, teacher_reliable_threshold=0.75,
                  student_reliable_threshold=0.85, depth_learn_from_stu_weight=1.0, **kwargs) -> None:
         super().__init__(num_epochs, **kwargs)
         self.stu_model = stu_model
@@ -43,9 +43,10 @@ class DepthFusion_MT_Trainer_addDepthTrainSignal(Trainer):
         self.scheduler = scheduler
         self.tea_scheduler = tea_scheduler
         self.ema_alpha = ema_alpha
+        self.iters_per_epoch = int(iters_per_epoch)
         self.labeled_bs = self.train_dataloader.batch_sampler.primary_batch_size
-        self.consistency_rampup = ramp_epochs_to_iters(float(consistency_rampup_epochs), int(iters_per_epoch))
         self.consistency = consistency
+        self.consistency_rampup_iter = self._set_rampup(rampup_unit, float(consistency_rampup))
         self.class_criterion = WeightedBCEDiceLoss()
         self.consistency_criterion = MSELoss()
         self.tea_learn_from_stu_criterion = BCELoss()
@@ -55,8 +56,15 @@ class DepthFusion_MT_Trainer_addDepthTrainSignal(Trainer):
 
         self.depth_learn_from_stu_weight = depth_learn_from_stu_weight
 
+    def _set_rampup(self, rampup_unit: str, consistency_rampup: float):
+        if rampup_unit == 'epoch':
+            return ramp_epochs_to_iters(consistency_rampup, self.iters_per_epoch)
+        if rampup_unit == 'iter':
+            return consistency_rampup
+        raise ValueError(f"Invalid rampup_unit: {rampup_unit}")
+
     def _get_current_consistency_weight(self, global_step):
-        return self.consistency * sigmoid_rampup(current=global_step, rampup_length=self.consistency_rampup)
+        return self.consistency * sigmoid_rampup(current=global_step, rampup_length=self.consistency_rampup_iter)
 
     def _update_ema_variable(self, global_step, model_a: nn.Module, model_b: nn.Module):
         coeff = min(1 - 1 / (global_step + 1), self.ema_alpha)
@@ -285,7 +293,8 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         scheduler, nEpoch,
         ema_alpha=float(cfg.get('Trainer.ema_decay', 0.999)),
         iters_per_epoch=iters_per_epoch,
-        consistency_rampup_epochs=float(cfg.get('Trainer.consistency_rampup_epochs')),
+        rampup_unit=str(cfg.get('Trainer.rampup_unit', 'epoch')),
+        consistency_rampup=float(cfg.get('Trainer.consistency_rampup')),
         consistency=float(cfg.get('Trainer.consistency')),
         tea_scheduler=tea_depth_branch_scheduler,
         teacher_reliable_threshold=float(cfg.get('Trainer.teacher_reliable_threshold', 0.75)),
