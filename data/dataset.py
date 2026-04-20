@@ -42,6 +42,10 @@ class kvasir_SEG(Dataset):
             self.images_list = os.listdir(os.path.join(self.data_path, image_dirname))
             self.images_list = sorted(self.images_list)
         else:
+            list_all_files = os.listdir(os.path.join(self.data_path, image_dirname))
+            if sorted(list_all_files) != sorted(list_name):
+                raise ValueError(f"Mismatch between list_name and list files in {os.path.join(self.data_path, image_dirname)}, \
+                    they should be the same when sorted")
             self.images_list = list_name ## no sort list if specified
 
         for img_id in self.images_list:
