@@ -92,8 +92,8 @@ def build_dataset_supervised(cfg):
         val_num = round(total_num * val_perc / 100)
         train_num = total_num - val_num
         print(f"[supervised] Total training images: {train_num}, validation images: {val_num}")
-        val_files = list_name[:val_num]
-        train_files = list_name[val_num:]
+        train_files = list_name[:train_num]
+        val_files = list_name[train_num:]
         train_data = getattr(dataset, cfg.get('data.dataset'))(
             root=cfg.get('data.root'), data2_dir=cfg.get('data.data2_dir'),
             mode='train', require_depth=cfg.get('data.require_depth'),
