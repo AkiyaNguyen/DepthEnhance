@@ -48,7 +48,8 @@ scheduler:
   eta_min: 1.0e-5
 
 Trainer:
-  consistency_rampup_epochs: 100
+  rampup_unit: 'epoch' # either epoch or iter
+  consistency_rampup: 100
   ema_decay: 0.999
   consistency: 2.0
   teacher_reliable_threshold: 0.75
@@ -62,7 +63,7 @@ Hook:
   ExtendMLFlowLoggerHook:
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
-    experiment_name: 'dav2_fusion_mt_train_signal'
+    experiment_name: 'dav2_mt_train'
     dir_save_plot: 'plots'
     logging_fields:
       - '*loss*'
@@ -76,13 +77,13 @@ Hook:
     max_save_epoch_interval: 50
     criteria: test_stu_Dice
     dagshub_destination_src_file: 'src_file'
-    list_src_dir_files: ['utils', 'test', 'models', 'data', 'DEMT_DAv2Fusion_addDepthTrainSignal.py']
+    list_src_dir_files: ['utils', 'test', 'models', 'data', 'DEMT_DAv2.py']
     dagshub_meta_dir: 'meta'
     run_name:
     meta_info:
       kaggle_run_link:
       dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
-      description: 'Mean Teacher with DAv2-fusion teacher and addDepthTrainSignal training flow'
+      description: 'Mean Teacher with DAv2 teacher training flow'
   # StopTrainAtEpoch:
   #   stop_at_epoch: 1000
 

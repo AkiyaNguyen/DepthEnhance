@@ -1,6 +1,10 @@
 
 **/__pycache__/
 
+# Archived / fully-commented training entrypoints and matching YAML configs
+unused/
+cfg/unused/
+
 mylib/
 
 save_dir/
@@ -28,7 +32,6 @@ export_student_teacher_masks.py
 final_demt.pth
 inference_kvasir.py
 requirements1.txt
-run_supervised_for_double_RGB.py
 temp_requirements.txt
 view_image_mask_depth.py
 visualize_demt_adddepth_predictions.py
