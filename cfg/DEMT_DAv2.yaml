@@ -16,6 +16,7 @@ data:
   image_dirname: images
   mask_dirname: masks
   depth_dirname: 
+  json_filename: datalist_info/kvasir_SEG_train.json
   label_mode: percentage
   labeled_perc: 10
   labeled_bs: 2
@@ -48,14 +49,14 @@ scheduler:
   eta_min: 1.0e-5
 
 Trainer:
-  rampup_unit: 'epoch' # either epoch or iter
-  consistency_rampup: 100
+  rampup_unit: 'iter' # either epoch or iter
+  consistency_rampup: 5000
   ema_decay: 0.999
   consistency: 2.0
   teacher_reliable_threshold: 0.75
   student_reliable_threshold: 0.85
   depth_learn_from_stu_weight: 0.3
-  contrastive_weight: 1.0
+  # contrastive_weight: 1.0
 
 Hook:
   MeanTeacherEvalHook:
@@ -84,8 +85,6 @@ Hook:
       kaggle_run_link:
       dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
       description: 'Mean Teacher with DAv2 teacher training flow'
-  # StopTrainAtEpoch:
-  #   stop_at_epoch: 1000
 
 score_criteria: test_stu_Dice
 

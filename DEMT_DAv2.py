@@ -40,6 +40,7 @@ class DEMT_DAv2_Trainer(Trainer):
         self.scheduler = scheduler
         self.tea_scheduler = tea_scheduler
         self.ema_alpha = ema_alpha
+        self.iters_per_epoch = int(iters_per_epoch)
         self.labeled_bs = self.train_dataloader.batch_sampler.primary_batch_size
 
         self.consistency = consistency
@@ -371,12 +372,10 @@ if __name__ == '__main__':
 
 #  !cd /kaggle/working/meanTeacherPolyp && \
 #     python DEMT_DAv2.py \
-#                     --optuna_trial_times 3\
+#                     --optuna_trial_times 0\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
-#                     data.dataset=kvasir_SEG \
 #                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2' \
-#                     Hook.StopTrainAtEpoch.stop_at_epoch=300 \
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
