@@ -23,9 +23,9 @@ from utils.build_dataset import build_dataset
 from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss
 
 
-class DEMT_DAv2_Trainer(Trainer):
+class BiFusion_DEMT_DAv2_Trainer(Trainer):
     """
-    Mean Teacher trainer for DEMT_DAv2.
+    Mean Teacher trainer for BiFusion_DEMT_DAv2.
     """
 
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
@@ -279,8 +279,11 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     print(f"nEpoch: {nEpoch} | Iters/epoch: {iters_per_epoch} => total train steps: {total_iter}")
 
     stu_model = getattr(models, cfg.get('model.stu_model.name'))(num_classes=cfg.get('model.num_channels_output')).to(device)
-    tea_model = getattr(models, cfg.get('model.tea_model.name'))(num_classes=cfg.get('model.num_channels_output'), dav2_model_name=\
-        cfg.get('model.tea_model.dav2_model_name', 'depth-anything/Depth-Anything-V2-Small-hf')).to(device)
+    
+    tea_kwargs = dict(cfg.get('model.tea_model', {}))
+    tea_kwargs.pop('name', None)
+
+    tea_model = getattr(models, cfg.get('model.tea_model.name'))(num_classes=cfg.get('model.num_channels_output'), **tea_kwargs).to(device)
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
@@ -291,7 +294,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     scheduler = CosineAnnealingLR(optimizer, T_max=total_iter, eta_min=eta_min)
     tea_scheduler = CosineAnnealingLR(tea_optimizer, T_max=nEpoch, eta_min=eta_min)
 
-    trainer = DEMT_DAv2_Trainer(
+    trainer = BiFusion_DEMT_DAv2_Trainer(
         stu_model, tea_model, train_dataloader,
         optimizer, tea_optimizer,
         scheduler, nEpoch,
@@ -347,9 +350,9 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training (ResNet34U_f_ExtendDAv2).')
+    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training (ResNet34U_f_ExtendDAv2_1).')
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
-    parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2.yaml', help='Path to YAML config')
+    parser.add_argument('--config', type=str, default='cfg/BiFusion_DEMT_DAv2.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
     cfg = Config(config_file=args.config, cli_overrides=unknown)
 
