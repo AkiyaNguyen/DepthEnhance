@@ -965,7 +965,7 @@ class BiFusionBlock(nn.Module):
         return fuse
 
 
-class ResNet34U_f_ExtendDAv2_1(nn.Module):
+class ResNet34U_f_ExtendDAv2_BiFusion(nn.Module):
     """
     DAv2 teacher: learned pre/post conv around bilinear resize (DAv2 stays ``dav2_dim`` channels).
     BiFusion fuses CNN ``e*`` with aligned DAv2 maps (``ch_1`` ≠ ``ch_2``). Optional ``+ e_k`` residual.

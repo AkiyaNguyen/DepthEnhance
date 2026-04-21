@@ -5,7 +5,7 @@ model:
   stu_model:
     name: ResNet34U_f
   tea_model:
-    name: ResNet34U_f_ExtendDAv2_1
+    name: ResNet34U_f_ExtendDAv2_BiFusion
     dav2_model_name: 'depth-anything/Depth-Anything-V2-Small-hf'
     use_cnn_residual: true
     bifusion_drop: 0.05
@@ -17,7 +17,7 @@ data:
   require_depth: False
   image_dirname: images
   mask_dirname: masks
-  depth_dirname: 
+  depth_dirname:
   json_filename: datalist_info/kvasir_SEG_train.json
   label_mode: percentage
   labeled_perc: 10
@@ -32,7 +32,7 @@ data:
     dataset_root: ../polypdepth_dataset/TestDataset/Kvasir
     image_dirname: images
     mask_dirname: masks
-    depth_dirname: 
+    depth_dirname:
     batch_size: 1
 
 nEpoch: 300
@@ -43,7 +43,7 @@ optimizer:
   momentum: 0.9
 
 tea_optimizer:
-  lr: 0.01
+  lr: 0.005
   weight_decay: 0.0001
   momentum: 0.9
 
@@ -51,14 +51,13 @@ scheduler:
   eta_min: 1.0e-5
 
 Trainer:
-  rampup_unit: 'iter' # either epoch or iter
+  rampup_unit: 'iter'
   consistency_rampup: 5000
   ema_decay: 0.999
   consistency: 2.0
   teacher_reliable_threshold: 0.75
   student_reliable_threshold: 0.85
   depth_learn_from_stu_weight: 0.3
-  # contrastive_weight: 1.0
 
 Hook:
   MeanTeacherEvalHook:
@@ -80,21 +79,19 @@ Hook:
     max_save_epoch_interval: 50
     criteria: test_stu_Dice
     dagshub_destination_src_file: 'src_file'
-    list_src_dir_files: ['utils', 'test', 'models', 'data', 'logs','BiFusion_DEMT_DAv2.py']
+    list_src_dir_files: ['utils', 'test', 'models', 'data', 'logs', 'BiFusion_DEMT_DAv2.py']
     dagshub_meta_dir: 'meta'
     run_name:
     meta_info:
       kaggle_run_link:
       dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
-      description: 'Mean Teacher with DAv2 teacher training flow with feature bifusion'
+      description: 'Mean Teacher with DAv2 + BiFusion'
 
 score_criteria: test_stu_Dice
 
 hyperparameter_sweep:
-  model/tea_model/use_cnn_residual:
+  Trainer/depth_learn_from_stu_weight:
     method: suggest_categorical
     params:
-      name: use_cnn_residual
-      choices:
-        - True
-        - False
+      name: depth_learn_from_stu_weight
+      choices: [0.2, 0.4, 0.5]

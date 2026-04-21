@@ -127,8 +127,10 @@ class BiFusion_DEMT_DAv2_Trainer(Trainer):
             labeled_stu = stu_pred[:self.labeled_bs]
             unlabeled_stu = stu_pred[self.labeled_bs:]
 
+            self.tea_model.eval() # remove drop out for higher quality pseudo-labels
             with torch.no_grad():
                 tea_output = self.tea_model(unlabeled_img)
+            self.tea_model.train()
 
             unlabeled_img_s_cutmix, ema_pred_u_cutmix = apa_cutmix(
                 unlabeled_img_s, tea_output, beta=0.3, t=self.current_epoch, T=self.num_epochs
@@ -350,7 +352,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training (ResNet34U_f_ExtendDAv2_1).')
+    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training (ResNet34U_f_ExtendDAv2_BiFusion).')
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
     parser.add_argument('--config', type=str, default='cfg/BiFusion_DEMT_DAv2.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
