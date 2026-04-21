@@ -1145,52 +1145,7 @@ class ResNet34U_f_ExtendDAv2_1(nn.Module):
         return final_output
         
 
-if __name__ == "__main__":
-    # rgb = torch.randn(1, 3, 320, 320)
-    # depth = torch.randn(1, 3, 320, 320)
-    # mask = torch.randn(1, 2, 320, 320)
-
-    #     # Training example (Mean Teacher)
-    # # teacher = Depth_W_SEFusion_ResNet34U_f(num_classes=1)
-
-    # # student = ResNet34U_f(num_classes=1)    
-
-    # teacher = Depth_W_ACM_ResNet34U_f_EMAEncoderOnly(num_classes=1)
-    # pred = teacher(rgb, depth)
-    # print(pred.shape)
-
-    
-    def count(model):
-        total     = sum(p.numel() for p in model.parameters())
-        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        frozen    = total - trainable
-        return total, trainable, frozen
-
-    def fmt(n):
-        return f"{n/1e6:.2f}M"
-
-    rgb   = torch.randn(1, 3, 320, 320)
-    depth = torch.randn(1, 3, 320, 320)
-
-    print("=" * 58)
-    print(f"{'Model':<12} {'Total':>10} {'Trainable':>12} {'Frozen':>10}")
-    print("=" * 58)
-
-    models_to_test = [
-        ("A (RGB)",    ResNet34U_f(num_classes=1),                      (rgb,)),
-        # ("B (Depth)",  DepthFusion_ResNet34U_f_EMAEncoderOnly(num_classes=1), (rgb, depth)),
-        ("C (DAv2)",   ResNet34U_f_ExtendDAv2(num_classes=1),  (rgb,)),
-    ]
-
-    for name, model, inp in models_to_test:
-        total, trainable, frozen = count(model)
-        print(f"{name:<12} {fmt(total):>10} {fmt(trainable):>12} {fmt(frozen):>10}")
-
-    print()
-    print("=" * 58)
-    print("FLOPs — input 320x320, batch=1")
-    print("=" * 58)
-    for name, model, inp in models_to_test:
-        s = summary(model, input_data=inp, verbose=0)
-        macs_g = s.total_mult_adds / 1e9
-        print(f"{name:<12}  GMACs: {macs_g:.2f}")
+# if __name__ == "__main__":
+#     # rgb = torch.randn(1, 3, 320, 320)
+#     # depth = torch.randn(1, 3, 320, 320)
+#     # mask = torch.randn(1, 2, 320, 320)
