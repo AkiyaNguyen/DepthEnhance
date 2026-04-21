@@ -65,7 +65,7 @@ Hook:
   ExtendMLFlowLoggerHook:
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
-    experiment_name: 'dav2_mt_train'
+    experiment_name: 'bi_fusion_dav2_mt_train'
     dir_save_plot: 'plots'
     logging_fields:
       - '*loss*'
@@ -79,13 +79,13 @@ Hook:
     max_save_epoch_interval: 50
     criteria: test_stu_Dice
     dagshub_destination_src_file: 'src_file'
-    list_src_dir_files: ['utils', 'test', 'models', 'data', 'DEMT_DAv2.py']
+    list_src_dir_files: ['utils', 'test', 'models', 'data', 'logs','BiFusion_DEMT_DAv2.py']
     dagshub_meta_dir: 'meta'
     run_name:
     meta_info:
       kaggle_run_link:
       dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
-      description: 'Mean Teacher with DAv2 teacher training flow'
+      description: 'Mean Teacher with DAv2 teacher training flow with feature bifusion'
 
 score_criteria: test_stu_Dice
 
