@@ -844,7 +844,307 @@ class ResNet34U_f_ExtendDAv2(nn.Module):
 
         return final_output
 
+
+class MaxMeanOperation(nn.Module):
+    """Max + mean over channel dim → 2 maps"""
+
+    def forward(self, x):
+        return torch.cat(
+            (torch.max(x, 1, keepdim=True)[0], torch.mean(x, 1, keepdim=True)),
+            dim=1,
+        )
+
+
+def _bf_conv(inp_dim, out_dim, kernel_size=3, bn=False, relu=True, bias=True):
+    layers = [
+        nn.Conv2d(
+            inp_dim,
+            out_dim,
+            kernel_size,
+            padding=(kernel_size - 1) // 2,
+            bias=bias,
+        )
+    ]
+    if bn:
+        layers.append(nn.BatchNorm2d(out_dim))
+    if relu:
+        layers.append(nn.ReLU(inplace=True))
+    return nn.Sequential(*layers)
+
+
+class BiFusionResidual(nn.Module):
+    """Fuses concat[g', x', bp] → ch_out (TransFuse-style bottleneck + skip)."""
+
+    def __init__(self, inp_dim, out_dim):
+        super().__init__()
+        mid = out_dim // 2
+        self.relu = nn.ReLU(inplace=True)
+        self.bn1 = nn.BatchNorm2d(inp_dim)
+        self.conv1 = nn.Conv2d(inp_dim, mid, kernel_size=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(mid)
+        self.conv2 = nn.Conv2d(mid, mid, kernel_size=3, padding=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(mid)
+        self.conv3 = nn.Conv2d(mid, out_dim, kernel_size=1, bias=False)
+        self.need_skip = inp_dim != out_dim
+        self.skip_layer = nn.Conv2d(inp_dim, out_dim, kernel_size=1, bias=False)
+
+    def forward(self, x):
+        residual = self.skip_layer(x) if self.need_skip else x
+        out = self.bn1(x)
+        out = self.relu(out)
+        out = self.conv1(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn3(out)
+        out = self.relu(out)
+        out = self.conv3(out)
+        return out + residual
+
+
+class BiFusionBlock(nn.Module):
+    """
+    TransFuse-style fusion: ``g`` = CNN (local), ``x`` = transformer/DAv2 (same H×W).
+
+    - ``ch_1``, ``ch_2``: input channel widths (may differ). ``W_g`` / ``W_x`` map both to ``ch_int``
+      for the bilinear term ``W_g(g) * W_x(x)``.
+    - Spatial attention on ``g``; channel attention (squeeze on ``x``) on ``x``.
+    - ``ch_out``: fused output width (match CNN stage for U-Net decoder).
+    - ``r_2``: bottleneck divisor for channel MLP on ``x`` (larger → narrower bottleneck).
+    """
+
+    def __init__(self, ch_1, ch_2, r_2, ch_int, ch_out, drop_rate=0.0):
+        super().__init__()
+        hidden2 = max(ch_2 // r_2, 1)
+        self.fc1 = nn.Conv2d(ch_2, hidden2, kernel_size=1)
+        self.fc2 = nn.Conv2d(hidden2, ch_2, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+
+        self.compress = MaxMeanOperation()
+        self.spatial = nn.Conv2d(2, 1, kernel_size=7, padding=3, bias=False)
+
+        self.W_g = nn.Sequential(
+            nn.Conv2d(ch_1, ch_int, kernel_size=1, bias=False), 
+            nn.BatchNorm2d(ch_int)
+        )
+
+        self.W_x = nn.Sequential(
+            nn.Conv2d(ch_2, ch_int, kernel_size=1, bias=False), 
+            nn.BatchNorm2d(ch_int)
+        )
         
+        self.W = nn.Sequential(
+            nn.Conv2d(ch_int, ch_int, kernel_size=3, padding=1, bias=False), 
+            nn.BatchNorm2d(ch_int), 
+            nn.ReLU(inplace=True)
+        )
+
+
+        self.relu = nn.ReLU(inplace=True)
+        self.residual = BiFusionResidual(ch_1 + ch_2 + ch_int, ch_out)
+        self.dropout = nn.Dropout2d(drop_rate) if drop_rate > 0 else None
+
+    def forward(self, g, x):
+        bp = self.W(self.W_g(g) * self.W_x(x))
+
+        g_in = g
+        g = self.compress(g)
+        g = self.spatial(g)
+        g = self.sigmoid(g) * g_in
+
+        x_in = x
+        x = x.mean((2, 3), keepdim=True)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.sigmoid(x) * x_in
+
+        fuse = self.residual(torch.cat([g, x, bp], dim=1))
+        if self.dropout is not None:
+            return self.dropout(fuse)
+        return fuse
+
+
+class ResNet34U_f_ExtendDAv2_1(nn.Module):
+    """
+    DAv2 teacher: learned pre/post conv around bilinear resize (DAv2 stays ``dav2_dim`` channels).
+    BiFusion fuses CNN ``e*`` with aligned DAv2 maps (``ch_1`` ≠ ``ch_2``). Optional ``+ e_k`` residual.
+    """
+    dav2_choice = {
+        "depth-anything/Depth-Anything-V2-Small-hf": {
+            "dav2_dim": 384,
+            "layer_indices": [3, 6, 9, 12],
+            "proj_channels": [512, 256, 128, 64]
+        },
+        "depth-anything/Depth-Anything-V2-Base-hf": {
+            "dav2_dim": 768,
+            "layer_indices": [3, 6, 9, 12],
+            "proj_channels": [512, 256, 128, 64]
+        }
+    }
+    def __init__(
+        self,
+        num_classes,
+        dropout=0.1,
+        dav2_model_name="depth-anything/Depth-Anything-V2-Small-hf",
+        use_cnn_residual=True,
+        bifusion_drop=0.0,
+    ):
+        super().__init__()
+        
+        if dav2_model_name not in self.dav2_choice:
+            allowed = ", ".join(sorted(self.dav2_choice.keys()))
+            raise ValueError(
+                f"Unknown dav2_model_name={dav2_model_name!r}. "
+                f"Supported ids: {allowed}"
+            )
+        
+        self.use_cnn_residual = use_cnn_residual
+
+        # RGB encoder — EMA-updated during SSL training (same as current architecture)
+        self.rgb_encoder = encoder(num_classes=None)
+        # Frozen DAv2 backbone (privileged geometric features)
+        
+        dav2 = AutoModelForDepthEstimation.from_pretrained(dav2_model_name)
+        self.dav2_encoder = dav2.backbone 
+        for p in self.dav2_encoder.parameters():
+            p.requires_grad = False
+        
+        self.dav2_dim = self.dav2_choice[dav2_model_name]['dav2_dim']
+        self.dav2_layer_indices = self.dav2_choice[dav2_model_name]['layer_indices']
+
+
+        dv2 = self.dav2_dim
+        self.pre_align = nn.ModuleList(
+            [
+                self._make_pre_align(dv2, dv2),
+                self._make_pre_align(dv2, dv2),
+                self._make_pre_align(dv2, dv2),
+                self._make_pre_align(dv2, dv2),
+            ]
+        )
+        self.post_align = nn.ModuleList(
+            [
+                self._make_post_align(dv2, dv2),
+                self._make_post_align(dv2, dv2),
+                self._make_post_align(dv2, dv2),
+                self._make_post_align(dv2, dv2)
+            ]
+        )
+        # ch_int: bilinear interaction width; r_2: channel-SE bottleneck on transformer branch
+        self.fusion_block5 = BiFusionBlock(512, dv2, r_2=16, ch_int=256, ch_out=512, drop_rate=bifusion_drop)
+        self.fusion_block4 = BiFusionBlock(256, dv2, r_2=16, ch_int=128, ch_out=256, drop_rate=bifusion_drop)
+        self.fusion_block3 = BiFusionBlock(128, dv2, r_2=16, ch_int=64, ch_out=128, drop_rate=bifusion_drop)
+        self.fusion_block2 = BiFusionBlock(64, dv2, r_2=8, ch_int=32, ch_out=64, drop_rate=bifusion_drop)
+        
+        # Standard U-Net decoder with skip connections
+        self.decoder5 = DecoderBlock(512, 512)
+        self.decoder4 = DecoderBlock(512 + 256, 256)
+        self.decoder3 = DecoderBlock(256 + 128, 128)
+        self.decoder2 = DecoderBlock(128 + 64,  64)
+        self.decoder1 = DecoderBlock(64  + 64,  64)  # e1 passed directly, no DAv2 fusion
+        
+        self.outconv = nn.Sequential(
+            ConvBlock(64, 32, kernel_size=3, stride=1, padding=1),
+            nn.Dropout2d(dropout),
+            nn.Conv2d(32, num_classes, 1),
+        )
+    
+    def _make_pre_align(self, in_dim, out_dim):
+        return nn.Sequential(
+            nn.Conv2d(in_dim, in_dim, kernel_size=1),
+            ConvBlock(in_dim, out_dim, kernel_size=3, stride=1, padding=1),
+        )
+    def _make_post_align(self, in_dim, out_dim):
+        return ConvBlock(in_dim, out_dim, kernel_size=3, stride=1, padding=1)   
+
+    def _extract_dav2_features(self, x):
+        """
+        Four intermediate backbone hidden states as spatial maps (patch/14 grid; e.g. 22×22 for 320×320).
+        CLS dropped; channel width is ``self.dav2_dim`` (384 Small, 768 Base).
+        """
+        with torch.no_grad():
+            hidden_states = self.dav2_encoder(
+                pixel_values=x,
+                output_hidden_states=True
+            ).hidden_states
+        
+        feats = []
+        for idx in self.dav2_layer_indices:
+            h = hidden_states[idx]
+            h = h[:, 1:, :]             # drop CLS → [B, N, D]
+            B, N, D = h.shape
+            h = h.permute(0, 2, 1)      # [B, D, N]
+            side = int(np.sqrt(N))
+            h = h.reshape(B, D, side, side)
+            feats.append(h)
+        
+        # feats[0] = layer 3  (low-level, closer to edges/textures)
+        # feats[3] = layer 12 (high-level, semantic/geometric)
+        return feats
+    
+    def forward(self, x, fp=False, feature_layers=1, type='mixed'):
+        # --- RGB encoder ---
+        e1, e2, e3, e4, e5 = self.rgb_encoder(x)
+        # e1: [B,  64, 160, 160]
+        # e2: [B,  64,  80,  80]
+        # e3: [B, 128,  40,  40]
+        # e4: [B, 256,  20,  20]
+        # e5: [B, 512,  10,  10]
+
+        # --- DAv2 feature extraction (no gradient) ---
+        dav2_feats = self._extract_dav2_features(x)
+        # each: [B, dav2_dim, H', W'] with H',W' from patch size (e.g. 22×22 @ 320, patch 14)
+
+        # --- Align DAv2 maps to each CNN stage: pre (patch grid) → resize → post (CNN resolution) ---
+        def align_stage(stage_idx, feat, target_spatial):
+            y = self.pre_align[stage_idx](feat)
+            y = F.interpolate(y, size=target_spatial, mode="bilinear", align_corners=False)
+            return self.post_align[stage_idx](y)
+
+        d2 = align_stage(0, dav2_feats[0], e2.shape[2:])
+        d3 = align_stage(1, dav2_feats[1], e3.shape[2:])
+        d4 = align_stage(2, dav2_feats[2], e4.shape[2:])
+        d5 = align_stage(3, dav2_feats[3], e5.shape[2:])
+
+        # --- BiFusion: g = CNN, x = DAv2 (same H×W; channels differ) ---
+        f5 = self.fusion_block5(e5, d5)
+        f4 = self.fusion_block4(e4, d4)
+        f3 = self.fusion_block3(e3, d3)
+        f2 = self.fusion_block2(e2, d2)
+        if self.use_cnn_residual:
+            f5 = f5 + e5
+            f4 = f4 + e4
+            f3 = f3 + e3
+            f2 = f2 + e2
+        # e1 has no DAv2 counterpart — passed directly to decoder
+
+        # --- U-Net decoder with skip connections ---
+        dec5 = self.decoder5(f5)
+        dec4 = self.decoder4(torch.cat([dec5, f4], dim=1))
+        dec3 = self.decoder3(torch.cat([dec4, f3], dim=1))
+        dec2 = self.decoder2(torch.cat([dec3, f2], dim=1))
+        dec1 = self.decoder1(torch.cat([dec2, e1], dim=1))
+
+        decoder_fea_layers = [dec1, dec2, dec3, dec4, dec5]
+        rgb_encoder_fea_layers = [e1,e2,e3,e4,e5]
+        mix_encoder_fea_layers = [e1, f2, f3, f4, f5]
+        out = self.outconv(dec1)
+        final_output = torch.sigmoid(out)
+
+        if fp:
+            if type == 'decoder':
+                return final_output, decoder_fea_layers[feature_layers - 1]
+            elif type == 'rgb_encoder':
+                return final_output, rgb_encoder_fea_layers[feature_layers - 1]
+            elif type == 'mix_encoder':
+                return final_output, mix_encoder_fea_layers[feature_layers - 1]
+            else:
+                raise ValueError(f"Invalid type: {type}, allowed types are 'decoder', 'rgb_encoder', 'mix_encoder'")
+
+        return final_output
+        
+
 if __name__ == "__main__":
     # rgb = torch.randn(1, 3, 320, 320)
     # depth = torch.randn(1, 3, 320, 320)
@@ -878,7 +1178,7 @@ if __name__ == "__main__":
 
     models_to_test = [
         ("A (RGB)",    ResNet34U_f(num_classes=1),                      (rgb,)),
-        ("B (Depth)",  DepthFusion_ResNet34U_f_EMAEncoderOnly(num_classes=1), (rgb, depth)),
+        # ("B (Depth)",  DepthFusion_ResNet34U_f_EMAEncoderOnly(num_classes=1), (rgb, depth)),
         ("C (DAv2)",   ResNet34U_f_ExtendDAv2(num_classes=1),  (rgb,)),
     ]
 
