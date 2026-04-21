@@ -374,24 +374,13 @@ if __name__ == '__main__':
             print(f"    {key}: {value}")
 
 #  !cd /kaggle/working/meanTeacherPolyp && \
-#     python DEMT_DAv2.py \
+#     python BiFusion_DEMT_DAv2.py \
 #                     --optuna_trial_times 0\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2' \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2' \
+#                     model.tea_model.use_cnn_residual=true \
+#                     Hook.ExtendMLFlowLoggerHook.run_name='BiFusion_DEMT_DAv2' \
+#                     Hook.ExtendMLFlowLoggerHook.experiment_name='BiFusion_DEMT_DAv2' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
 
-
-#  !cd /kaggle/working/meanTeacherPolyp && \
-#     python DEMT_DAv2.py \
-#                     --optuna_trial_times 0\
-#                     model.tea_model.dav2_model_name='depth-anything/Depth-Anything-V2-Base-hf' \
-#                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
-#                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
-#                     data.dataset=kvasir_SEG \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='DAv2_with_Depth-Anything-V2-Base-hf' \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='DAv2_with_Depth-Anything-V2-Base-hf' \
-#                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
-#                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1

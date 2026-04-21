@@ -90,11 +90,10 @@ Hook:
 score_criteria: test_stu_Dice
 
 hyperparameter_sweep:
-  Trainer/contrastive_weight:
+  model/tea_model/use_cnn_residual:
     method: suggest_categorical
     params:
-      name: contrastive_weight
+      name: use_cnn_residual
       choices:
-        - 0.5
-        - 1.0
-        - 1.5
+        - True
+        - False
