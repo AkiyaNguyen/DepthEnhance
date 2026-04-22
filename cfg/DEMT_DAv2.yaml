@@ -16,7 +16,7 @@ data:
   image_dirname: images
   mask_dirname: masks
   depth_dirname: 
-  json_filename: datalist_info/kvasir_SEG_train.json
+  json_filename: datalist_info/official/kvasir_SEG_train.json
   label_mode: percentage
   labeled_perc: 10
   labeled_bs: 2

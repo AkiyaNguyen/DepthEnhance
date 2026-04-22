@@ -18,7 +18,7 @@ data:
   labeled_perc: 10
   labeled_bs: 2
   batch_size: 4
-  json_filename: datalist_info/kvasir_SEG_train.json
+  json_filename: datalist_info/official/kvasir_SEG_train.json
   shuffle: true
   num_workers: 0
   val_split_perc: 0
