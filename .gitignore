@@ -20,7 +20,10 @@ visualize_demt_adddepth_predictions.py
 plots/
 save_dir/
 scripts/
+kaggle/
+kaggle_runner.py
 
+.env
 **/unused/**
 try**
 **.txt

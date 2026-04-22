@@ -392,3 +392,10 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='DAv2_with_Depth-Anything-V2-Base-hf' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
+
+
+#  !cd /kaggle/working/meanTeacherPolyp && \
+#     python DEMT_DAv2.py \
+#                     --optuna_trial_times 0\
+#                     data.root=../polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
+#                     data.test.dataset_root=../polypDataset_final1/kvasir_SEG/Test \
