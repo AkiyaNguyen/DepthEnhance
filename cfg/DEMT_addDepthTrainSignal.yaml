@@ -71,6 +71,7 @@ Hook:
     eval_every_epoch: 2
   ExtendMLFlowLoggerHook:
     should_use: True
+    plot_every_epoch: 1
   ## params for base mlflowloggerhook
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
