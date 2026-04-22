@@ -55,6 +55,7 @@ Hook:
   LoggerHook:
     logger_file: logs/supervised.json
   ExtendMLFlowLoggerHook:
+    should_use: True
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
     experiment_name: 'supervised_10pct'
