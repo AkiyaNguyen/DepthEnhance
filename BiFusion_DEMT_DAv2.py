@@ -380,7 +380,6 @@ if __name__ == '__main__':
 #                     --optuna_trial_times 0\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
-#                     model.tea_model.use_cnn_residual=true \
 #                     Hook.ExtendMLFlowLoggerHook.run_name='BiFusion_DEMT_DAv2' \
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='BiFusion_DEMT_DAv2' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \

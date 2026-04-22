@@ -253,7 +253,7 @@ if __name__ == '__main__':
 
 # !cd /kaggle/working/meanTeacherPolyp && \
 #     python run_supervised_10pct.py \
-#                     --optuna_trial_times 4\
+#                     --optuna_trial_times 0\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
 #                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
 #                     data.dataset=kvasir_SEG \
