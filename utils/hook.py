@@ -97,7 +97,7 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
             self.patience = 0
 
     def after_train(self) -> None:
-        self.log_accumulate_info_to_mlflow()
+        # self.log_accumulate_info_to_mlflow()
 
         ## log the last ckpt and the best ckpt then call the parent class
         if self.ckpt_info['ckpt'] is not None:
