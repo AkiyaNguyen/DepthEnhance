@@ -23,9 +23,12 @@ from utils.build_dataset import build_dataset, split_csv_or_list
 from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss
 
 
-class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
+class DEMT_DAv2_fullEMA_Trainer(Trainer):
     """
-    Mean Teacher trainer for ablation ``BiFusion_DEMT_DAv2_noEMA`` (expects ``ResNet34U_f_ExtendDAv2`` teacher).
+    Same two-phase schedule and hyperparameters as ``DEMT_DAv2_Trainer``, except phase 1 EMA-updates
+    teacher ``rgb_encoder``, ``decoder*``, and ``outconv`` from the student (not only ``rgb_encoder``).
+    Phase 2 freezes those EMA-managed modules and trains fusion/projection blocks only — same rule
+    set as the previous full-EMA BiFusion script, applied to ``ResNet34U_f_ExtendDAv2``.
     """
 
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
@@ -112,7 +115,7 @@ class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
                        'consistency_weight': [], 'unlabeled_rgbd_cutmix_loss': [], 'loss': []}
         phase2_info = {'teacher_labeled_loss': [], 'depth_learn_from_stu_loss': [], 'loss': []}
 
-        # ========== PHASE 1: Train Student only (no EMA update to teacher) ==========
+        # ========== PHASE 1: Train Student + EMA (teacher rgb_encoder + decoder + head) ==========
         for batch_id, data in enumerate(self.train_dataloader):
             self.stu_optimizer.zero_grad()
             img_s, img, label = data['image_s'], data['image'], data['label']
@@ -126,10 +129,8 @@ class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
             labeled_stu = stu_pred[:self.labeled_bs]
             unlabeled_stu = stu_pred[self.labeled_bs:]
 
-            self.tea_model.eval()  # remove drop out for higher quality pseudo-labels
             with torch.no_grad():
                 tea_output = self.tea_model(unlabeled_img)
-            self.tea_model.train()
 
             unlabeled_img_s_cutmix, ema_pred_u_cutmix = apa_cutmix(
                 unlabeled_img_s, tea_output, beta=0.3, t=self.current_epoch, T=self.num_epochs
@@ -152,6 +153,15 @@ class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
             torch.nn.utils.clip_grad_norm_(self.stu_model.parameters(), max_norm=1.0)
             self.stu_optimizer.step()
 
+            global_step = batch_id + self.current_epoch * len(self.train_dataloader)
+            self._update_ema_variable(global_step=global_step, model_a=self.tea_model.rgb_encoder, model_b=self.stu_model.encoder1)
+            self._update_ema_variable(global_step=global_step, model_a=self.tea_model.decoder5, model_b=self.stu_model.decoder5)
+            self._update_ema_variable(global_step=global_step, model_a=self.tea_model.decoder4, model_b=self.stu_model.decoder4)
+            self._update_ema_variable(global_step=global_step, model_a=self.tea_model.decoder3, model_b=self.stu_model.decoder3)
+            self._update_ema_variable(global_step=global_step, model_a=self.tea_model.decoder2, model_b=self.stu_model.decoder2)
+            self._update_ema_variable(global_step=global_step, model_a=self.tea_model.decoder1, model_b=self.stu_model.decoder1)
+            self._update_ema_variable(global_step=global_step, model_a=self.tea_model.outconv, model_b=self.stu_model.outconv)
+
             phase1_info['labeled_loss'].append(loss_sup.item())
             phase1_info['unlabeled_rgbd_loss'].append(loss_consist_rgbd.item())
             phase1_info['unlabeled_rgbd_cutmix_loss'].append(loss_consist_rgbd_cutmix.item())
@@ -163,7 +173,7 @@ class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
         p1.update(lr_logging_dict(self.stu_optimizer, 'lr'))
         self._add_info(p1)
 
-        # ========== PHASE 2: Train Teacher (including rgb_encoder, except frozen DAv2 backbone) ==========
+        # ========== PHASE 2: Train teacher fusion/proj only (EMA-managed blocks frozen) ==========
         for _, data in enumerate(self.train_dataloader):
             self.tea_optimizer.zero_grad()
             img, label = data['image'], data['label']
@@ -172,6 +182,21 @@ class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
             labeled_img = img[:self.labeled_bs]
             unlabeled_img = img[self.labeled_bs:]
             label = label[:self.labeled_bs]
+
+            for param in self.tea_model.rgb_encoder.parameters():
+                param.requires_grad_(False)
+            for param in self.tea_model.decoder5.parameters():
+                param.requires_grad_(False)
+            for param in self.tea_model.decoder4.parameters():
+                param.requires_grad_(False)
+            for param in self.tea_model.decoder3.parameters():
+                param.requires_grad_(False)
+            for param in self.tea_model.decoder2.parameters():
+                param.requires_grad_(False)
+            for param in self.tea_model.decoder1.parameters():
+                param.requires_grad_(False)
+            for param in self.tea_model.outconv.parameters():
+                param.requires_grad_(False)
 
             tea_labeled_rgbd_output = self.tea_model(labeled_img)
             loss_tea_sup = self.class_criterion(tea_labeled_rgbd_output, label)
@@ -198,7 +223,12 @@ class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
             phase2_info['loss'].append(total_loss.item())
 
             for name, param in self.tea_model.named_parameters():
-                if name.startswith('dav2_encoder.'):
+                if (
+                    name.startswith('dav2_encoder.')
+                    or name.startswith('rgb_encoder.')
+                    or name.startswith('decoder')
+                    or name.startswith('outconv.')
+                ):
                     param.requires_grad_(False)
                 else:
                     param.requires_grad_(True)
@@ -273,22 +303,19 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     print(f"nEpoch: {nEpoch} | Iters/epoch: {iters_per_epoch} => total train steps: {total_iter}")
 
     stu_model = getattr(models, cfg.get('model.stu_model.name'))(num_classes=cfg.get('model.num_channels_output')).to(device)
-
-    tea_kwargs = dict(cfg.get('model.tea_model', {}))
-    tea_kwargs.pop('name', None)
-
-    tea_model = getattr(models, cfg.get('model.tea_model.name'))(num_classes=cfg.get('model.num_channels_output'), **tea_kwargs).to(device)
+    tea_model = getattr(models, cfg.get('model.tea_model.name'))(num_classes=cfg.get('model.num_channels_output'), dav2_model_name=\
+        cfg.get('model.tea_model.dav2_model_name', 'depth-anything/Depth-Anything-V2-Small-hf')).to(device)
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
                                 momentum=cfg.get('optimizer.momentum'), weight_decay=cfg.get('optimizer.weight_decay'))
     tea_optimizer = torch.optim.SGD(tea_model.parameters(), lr=cfg.get('tea_optimizer.lr', cfg.get('optimizer.lr')),
-                                    momentum=cfg.get('tea_optimizer.momentum', cfg.get('optimizer.momentum')),
-                                    weight_decay=cfg.get('tea_optimizer.weight_decay', cfg.get('optimizer.weight_decay')))
+                                momentum=cfg.get('tea_optimizer.momentum', cfg.get('optimizer.momentum')),
+                                weight_decay=cfg.get('tea_optimizer.weight_decay', cfg.get('optimizer.weight_decay')))
     eta_min = float(cfg.get('scheduler.eta_min', 1e-5))
     scheduler = CosineAnnealingLR(optimizer, T_max=total_iter, eta_min=eta_min)
     tea_scheduler = CosineAnnealingLR(tea_optimizer, T_max=nEpoch, eta_min=eta_min)
 
-    trainer = BiFusion_DEMT_DAv2_noEMA_Trainer(
+    trainer = DEMT_DAv2_fullEMA_Trainer(
         stu_model, tea_model, train_dataloader,
         optimizer, tea_optimizer,
         scheduler, nEpoch,
@@ -324,22 +351,22 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     if cfg.get('Hook.ExtendMLFlowLoggerHook.should_use', True):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
-                     dagshub_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_dir_save_ckpt'),
-                     max_save_epoch_interval=int(cfg.get('Hook.ExtendMLFlowLoggerHook.max_save_epoch_interval')),
-                     log_every_epoch=int(cfg.get('Hook.ExtendMLFlowLoggerHook.log_every_epoch', 1)),
-                     criteria=cfg.get('Hook.ExtendMLFlowLoggerHook.criteria'),
-                     dagshub_destination_src_file=str(cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_destination_src_file')),
-                     list_src_dir_files=list(cfg.get('Hook.ExtendMLFlowLoggerHook.list_src_dir_files')),
-                     dagshub_meta_dir=str(cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_meta_dir')),
-                     meta_info=dict(cfg.get('Hook.ExtendMLFlowLoggerHook.meta_info')),
-                     dagshub_repo_owner=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_repo_owner'),
-                     dagshub_repo_name=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_repo_name'),
-                     experiment_name=str(cfg.get('Hook.ExtendMLFlowLoggerHook.experiment_name')),
-                     dir_save_plot=cfg.get('Hook.ExtendMLFlowLoggerHook.dir_save_plot'),
-                     logging_fields=list(cfg.get('Hook.ExtendMLFlowLoggerHook.logging_fields')),
-                     run_name=cfg.get('Hook.ExtendMLFlowLoggerHook.run_name'),
-                     cfg=cfg,
-                     )
+                    dagshub_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_dir_save_ckpt'),
+                    max_save_epoch_interval=int(cfg.get('Hook.ExtendMLFlowLoggerHook.max_save_epoch_interval')),
+                    log_every_epoch=int(cfg.get('Hook.ExtendMLFlowLoggerHook.log_every_epoch', 1)),
+                    criteria=cfg.get('Hook.ExtendMLFlowLoggerHook.criteria'),
+                    dagshub_destination_src_file=str(cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_destination_src_file')),
+                    list_src_dir_files=list(cfg.get('Hook.ExtendMLFlowLoggerHook.list_src_dir_files')),
+                    dagshub_meta_dir=str(cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_meta_dir')),
+                    meta_info=dict(cfg.get('Hook.ExtendMLFlowLoggerHook.meta_info')),
+                    dagshub_repo_owner=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_repo_owner'),
+                    dagshub_repo_name=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_repo_name'),
+                    experiment_name=str(cfg.get('Hook.ExtendMLFlowLoggerHook.experiment_name')),
+                    dir_save_plot=cfg.get('Hook.ExtendMLFlowLoggerHook.dir_save_plot'),
+                    logging_fields=list(cfg.get('Hook.ExtendMLFlowLoggerHook.logging_fields')),
+                    run_name=cfg.get('Hook.ExtendMLFlowLoggerHook.run_name'),
+                    cfg=cfg,
+                    )
     hook_builder(LoggerHook, logger_file='logs/simple.json')
 
     trainer.train()
@@ -353,10 +380,10 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Ablation: Mean Teacher with ResNet34U_f_ExtendDAv2 teacher (no phase-1 EMA into teacher).'
+        description='DEMT_DAv2 Mean Teacher ablation: full phase-1 EMA into teacher rgb_encoder+decoder+head.'
     )
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
-    parser.add_argument('--config', type=str, default='cfg/BiFusion_DEMT_DAv2_noEMA.yaml', help='Path to YAML config')
+    parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2_fullEMA.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
     cfg = Config(config_file=args.config, cli_overrides=unknown)
 
@@ -376,16 +403,3 @@ if __name__ == '__main__':
         print("  Params:")
         for key, value in trial.params.items():
             print(f"    {key}: {value}")
-
-
-#  !cd /kaggle/working/meanTeacherPolyp && \
-    # python BiFusion_DEMT_DAv2_noEMA.py \
-    #                 --optuna_trial_times 0\
-    #                 data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
-    #                 data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
-    #                 Hook.ExtendMLFlowLoggerHook.run_name='BiFusion_DEMT_DAv2_noEMA' \
-    #                 Hook.ExtendMLFlowLoggerHook.experiment_name='BiFusion_DEMT_DAv2_noEMA' \
-    #                 Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
-    #                 Hook.ExtendMLFlowLoggerHook.meta_info.version=1
-
-
