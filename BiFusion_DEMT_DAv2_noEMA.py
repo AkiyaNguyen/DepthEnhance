@@ -315,10 +315,13 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     dataset_names = split_csv_or_list(cfg.get('data.test.dataset_name'))
     if len(dataset_names) != len(test_dataloaders):
-        dataset_names = [str(i) for i in range(len(test_dataloaders))]
+        if len(dataset_names) == 1:
+            dataset_names = ['']
+        else:
+            dataset_names = [str(i) + '_' for i in range(len(test_dataloaders))]
     for test_dataloader, dataset_name in zip(test_dataloaders, dataset_names):
         hook_builder(MeanTeacherEvalHook_DAv2_addDepthTrainSignal, eval_data_loader=test_dataloader,
-                     eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix=f'test_{dataset_name}_')
+                     eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix=f'test_{dataset_name}')
 
     if cfg.get('Hook.ExtendMLFlowLoggerHook.should_use', True):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),

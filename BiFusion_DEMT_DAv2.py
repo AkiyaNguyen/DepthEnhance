@@ -324,10 +324,13 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
     dataset_names = split_csv_or_list(cfg.get('data.test.dataset_name'))
     if len(dataset_names) != len(test_dataloaders):
-        dataset_names = [str(i) for i in range(len(test_dataloaders))]
+        if len(dataset_names) == 1:
+            dataset_names = ['']
+        else:
+            dataset_names = [str(i) + '_' for i in range(len(test_dataloaders))]
     for test_dataloader, dataset_name in zip(test_dataloaders, dataset_names):
         hook_builder(MeanTeacherEvalHook_DAv2_addDepthTrainSignal, eval_data_loader=test_dataloader,
-                    eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix=f'test_{dataset_name}_')
+                    eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix=f'test_{dataset_name}')
 
     if cfg.get('Hook.ExtendMLFlowLoggerHook.should_use', True):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
@@ -392,4 +395,16 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='BiFusion_DEMT_DAv2' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
+
+
+
+    # python BiFusion_DEMT_DAv2.py \
+    #                 --optuna_trial_times 0\
+    #                 data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
+    #                 data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
+    #                 model.tea_model.name=DEMT_DAv2_Extend_RawDINOv2 \
+    #                 Hook.ExtendMLFlowLoggerHook.run_name='BiFusion_DEMT_DAv2_rawDINO' \
+    #                 Hook.ExtendMLFlowLoggerHook.experiment_name='BiFusion_DEMT_DAv2_rawDINO' \
+    #                 Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
+    #                 Hook.ExtendMLFlowLoggerHook.meta_info.version=1
 

@@ -19,7 +19,7 @@ import mlflow
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from utils.ramps import sigmoid_rampup, ramp_epochs_to_iters
 
-from utils.build_dataset import build_dataset
+from utils.build_dataset import build_dataset, split_csv_or_list
 from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss
 
 
@@ -267,9 +267,9 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     device = get_proper_device(cfg.get('device'))
     set_seed(cfg.get('seed'))
 
-    train_dataloader, val_dataloader, test_dataloader = build_dataset(cfg)
+    train_dataloader, val_dataloader, test_dataloaders = build_dataset(cfg)
     assert train_dataloader is not None, "train_dataloader is None"
-    assert test_dataloader is not None, "test_dataloader is None"
+    assert len(test_dataloaders) > 0, "test_dataloaders is empty"
 
     iters_per_epoch = len(train_dataloader)
     if iters_per_epoch == 0:
@@ -315,8 +315,16 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     if val_dataloader is not None:
         hook_builder(MeanTeacherEvalHook_DAv2_addDepthTrainSignal, eval_data_loader=val_dataloader,
                      eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix='val_')
-    hook_builder(MeanTeacherEvalHook_DAv2_addDepthTrainSignal, eval_data_loader=test_dataloader,
-                 eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix='test_')
+
+    dataset_names = split_csv_or_list(cfg.get('data.test.dataset_name'))
+    if len(dataset_names) != len(test_dataloaders):
+        if len(dataset_names) == 1:
+            dataset_names = ['']
+        else:
+            dataset_names = [str(i) + '_' for i in range(len(test_dataloaders))]
+    for test_dataloader, dataset_name in zip(test_dataloaders, dataset_names):
+        hook_builder(MeanTeacherEvalHook_DAv2_addDepthTrainSignal, eval_data_loader=test_dataloader,
+                     eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix=f'test_{dataset_name}')
 
     if cfg.get('Hook.ExtendMLFlowLoggerHook.should_use', True):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
