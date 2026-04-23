@@ -28,3 +28,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# !python shuffle_data.py --input-dir /kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Train \
+# --seed 42 --output-json datalist_info/official/kvasir_SEG_seed_42.json
+

@@ -15,14 +15,13 @@ plot_kvasir_test_qualitative.py
 plot_qualitative_depth_enhance_vs_supervised.py
 plot_qualitative_figure2_demt.py
 view_image_mask_depth.py
-visualize_demt_adddepth_predictions.py
-
+visualize*.py
 plots/
 save_dir/
 scripts/
 kaggle/
 kaggle_runner.py
-
+temp.py
 .env
 **/unused/**
 try**
