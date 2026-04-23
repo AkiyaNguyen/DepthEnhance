@@ -164,6 +164,15 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
         return ConvBlock(in_dim, out_dim, kernel_size=3, stride=1, padding=1)
 
     def _extract_dino_features(self, x) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        # DINOv2 patch embed requires H and W divisible by patch size (14 here).
+        # We pad only for the transformer branch; fused features are resized back to CNN scales later.
+        patch_size = 14
+        _, _, h, w = x.shape
+        pad_h = (patch_size - (h % patch_size)) % patch_size
+        pad_w = (patch_size - (w % patch_size)) % patch_size
+        if pad_h or pad_w:
+            x = F.pad(x, (0, pad_w, 0, pad_h), mode="replicate")
+
         with torch.no_grad():
             hidden_states = self.dav2_encoder.get_intermediate_layers(
                 x,
