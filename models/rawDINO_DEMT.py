@@ -35,10 +35,10 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
     **raw DINOv2** (torch.hub) loaded into the local Depth-Anything-V2 ViT shell, instead of the
     HuggingFace Depth-Anything-V2 backbone (depth-pretrained).
 
-    Configure via YAML under ``model.tea_model`` (same keys as the default teacher), e.g. set
-    ``name: DEMT_DAv2_Extend_RawDINOv2`` and ``dav2_model_name`` to Small/Base HF ids to pick
-    vits/vitb + matching layer schedule. Optional: ``load_raw_dino``, ``raw_dino_source``,
-    ``raw_dino_model``, ``dino_weights_path``, ``freeze_dino``, ``dropout``.
+    Configure via YAML under ``model.tea_model`` (same keys as ``ResNet34U_f_ExtendDAv2`` where
+    applicable): ``dav2_model_name`` (Small/Base HF ids → vits/vitb + same ``dav2_choice`` dims
+    and layer indices), ``dropout``. Raw-DINO-only: ``load_raw_dino``, ``raw_dino_source``,
+    ``raw_dino_model``, ``dino_weights_path``.
 
     Trainer-facing attributes match ``ResNet34U_f_ExtendDAv2``:
     ``rgb_encoder``, ``dav2_encoder``, ``fusion_block{2..5}``, ``decoder*``, ``outconv``, ``proj*``.
@@ -77,38 +77,38 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
         self,
         num_classes,
         dropout=0.1,
-        raw_dino_encoder: str = "vitl",
+        dav2_model_name: str = "depth-anything/Depth-Anything-V2-Small-hf",
         load_raw_dino: bool = True,
         raw_dino_source: str = "facebookresearch/dinov2",
         raw_dino_model: Optional[str] = None,
         dino_weights_path: Optional[str] = None,
-        freeze_dino: bool = True,
-        dav2_model_name: Optional[str] = None,
     ):
         super().__init__()
 
-        if dav2_model_name is not None and dav2_model_name in self._dav2_to_raw_encoder:
-            raw_dino_encoder = str(self._dav2_to_raw_encoder[dav2_model_name])
+        if dav2_model_name not in ResNet34U_f_ExtendDAv2.dav2_choice:
+            allowed = ", ".join(sorted(ResNet34U_f_ExtendDAv2.dav2_choice.keys()))
+            raise ValueError(
+                f"Unknown dav2_model_name={dav2_model_name!r}. "
+                f"Supported ids: {allowed}"
+            )
+        if dav2_model_name not in self._dav2_to_raw_encoder:
+            raise ValueError(
+                f"dav2_model_name={dav2_model_name!r} has no raw-DINO encoder mapping "
+                f"(supported: {list(self._dav2_to_raw_encoder.keys())})."
+            )
+
+        fusion_cfg = ResNet34U_f_ExtendDAv2.dav2_choice[dav2_model_name]
+        self.dav2_dim = int(fusion_cfg["dav2_dim"])
+        self.dav2_layer_indices: List[int] = list(fusion_cfg["layer_indices"])
+        self.proj_channels: List[int] = list(fusion_cfg["proj_channels"])
+
+        raw_dino_encoder = str(self._dav2_to_raw_encoder[dav2_model_name])
         if raw_dino_encoder not in self._encoder_cfg:
             raise ValueError(
                 f"Invalid raw_dino_encoder={raw_dino_encoder!r}. Allowed: {list(self._encoder_cfg.keys())}"
             )
 
         enc_cfg = self._encoder_cfg[raw_dino_encoder]
-
-        if dav2_model_name is not None and dav2_model_name in ResNet34U_f_ExtendDAv2.dav2_choice:
-            fusion_cfg = ResNet34U_f_ExtendDAv2.dav2_choice[dav2_model_name]
-            self.dav2_dim = int(fusion_cfg["dav2_dim"])
-            self.dav2_layer_indices: List[int] = list(fusion_cfg["layer_indices"])
-            self.proj_channels: List[int] = list(fusion_cfg["proj_channels"])
-        else:
-            # Legacy: infer channel width from encoder variant (no HF id).
-            legacy_dim = {k: int(v["out_channels"][-1]) for k, v in self._encoder_cfg.items()}
-            self.dav2_dim = legacy_dim[raw_dino_encoder]
-            n_blocks = {"vits": 12, "vitb": 12, "vitl": 24, "vitg": 40}[raw_dino_encoder]
-            step = max((n_blocks - 1) // 4, 1)
-            self.dav2_layer_indices = [step * i for i in range(4)]
-            self.proj_channels = [512, 256, 128, 64]
 
         self.rgb_encoder = encoder(num_classes=None)
 
@@ -126,9 +126,8 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
         )
 
         self.dav2_encoder = self.depth_anything.pretrained
-        if freeze_dino:
-            for p in self.dav2_encoder.parameters():
-                p.requires_grad = False
+        for p in self.dav2_encoder.parameters():
+            p.requires_grad = False
 
         n_blocks = len(self.dav2_encoder.blocks)
         self._dino_intermediate_idx = [min(int(i), n_blocks - 1) for i in self.dav2_layer_indices]
@@ -217,7 +216,7 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
             feats.append(h)
         return tuple(feats)
 
-    def forward(self, x, fp=False, feature_layers=1, type="mixed"):
+    def forward(self, x, fp=False, feature_layers=1, type='mixed'):
         e1, e2, e3, e4, e5 = self.rgb_encoder(x)
 
         dav2_feats = self._extract_raw_dino_features(x)
@@ -254,11 +253,11 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
         final_output = torch.sigmoid(out)
 
         if fp:
-            if type == "decoder":
+            if type == 'decoder':
                 return final_output, decoder_fea_layers[feature_layers - 1]
-            if type == "rgb_encoder":
+            if type == 'rgb_encoder':
                 return final_output, rgb_encoder_fea_layers[feature_layers - 1]
-            if type == "mix_encoder":
+            if type == 'mix_encoder':
                 return final_output, mix_encoder_fea_layers[feature_layers - 1]
             raise ValueError(
                 f"Invalid type: {type}, allowed types are 'decoder', 'rgb_encoder', 'mix_encoder'"

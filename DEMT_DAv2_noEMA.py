@@ -273,7 +273,6 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     _tm = cfg.get('model.tea_model')
     tea_kwargs = dict(_tm) if isinstance(_tm, dict) else {}
     tea_kwargs.pop('name', None)
-    tea_kwargs.setdefault('dav2_model_name', cfg.get('model.tea_model.dav2_model_name', 'depth-anything/Depth-Anything-V2-Small-hf'))
     tea_model = getattr(models, tea_name)(num_classes=cfg.get('model.num_channels_output'), **tea_kwargs).to(device)
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
