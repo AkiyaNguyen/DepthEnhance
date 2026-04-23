@@ -63,7 +63,7 @@ Hook:
     eval_every_epoch: 2
   ExtendMLFlowLoggerHook:
     should_use: True
-    plot_every_epoch: 1
+    log_every_epoch: 1
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
     experiment_name: 'dav2_mt_train'
