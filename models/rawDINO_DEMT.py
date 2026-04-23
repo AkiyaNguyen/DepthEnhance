@@ -30,12 +30,18 @@ DepthAnythingV2 = importlib.import_module("depth_anything_v2.dpt").DepthAnything
 
 class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
     """
-    Same forward path as ``ResNet34U_f_ExtendDAv2`` (proj + SEFusion + U-Net decoder),
-    but the frozen geometric backbone is **raw DINOv2** (torch.hub) remapped into the
-    Depth-Anything-V2 ViT encoder, instead of the HuggingFace Depth-Anything-V2 backbone.
+    Drop-in teacher for ``DEMT_DAv2.py`` (same forward, losses, EMA targets, and module names
+    as ``ResNet34U_f_ExtendDAv2``). The only architectural difference is the frozen backbone:
+    **raw DINOv2** (torch.hub) loaded into the local Depth-Anything-V2 ViT shell, instead of the
+    HuggingFace Depth-Anything-V2 backbone (depth-pretrained).
+
+    Configure via YAML under ``model.tea_model`` (same keys as the default teacher), e.g. set
+    ``name: DEMT_DAv2_Extend_RawDINOv2`` and ``dav2_model_name`` to Small/Base HF ids to pick
+    vits/vitb + matching layer schedule. Optional: ``load_raw_dino``, ``raw_dino_source``,
+    ``raw_dino_model``, ``dino_weights_path``, ``freeze_dino``, ``dropout``.
 
     Trainer-facing attributes match ``ResNet34U_f_ExtendDAv2``:
-    ``rgb_encoder``, ``dav2_encoder``, ``fusion_block*``, ``decoder*``, ``outconv``.
+    ``rgb_encoder``, ``dav2_encoder``, ``fusion_block{2..5}``, ``decoder*``, ``outconv``, ``proj*``.
     """
 
     # DepthAnythingV2 ``encoder=`` id → DPT stem config (must match local depth_anything_v2).
