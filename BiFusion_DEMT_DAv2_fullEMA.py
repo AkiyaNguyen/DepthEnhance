@@ -22,9 +22,9 @@ from BiFusion_DEMT_DAv2 import (
 
 class BiFusion_DEMT_DAv2_fullEMA_Trainer(BiFusion_DEMT_DAv2_Trainer):
     """
-    Full-EMA variant:
+    Ablation (ExtendDAv2 teacher, not BiFusion):
     - Phase 1: EMA-update teacher RGB encoder + decoder + head from student.
-    - Phase 2: Freeze EMA-managed blocks; train only non-EMA teacher blocks.
+    - Phase 2: Freeze EMA-managed blocks; train fusion/proj (and any other non-frozen) teacher blocks.
     """
 
     def run_step_(self) -> None:
@@ -264,7 +264,9 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training with full EMA on RGB encoder+decoder path.')
+    parser = argparse.ArgumentParser(
+        description='Ablation: Mean Teacher with ResNet34U_f_ExtendDAv2 teacher (full EMA on rgb_encoder+decoder+head in phase 1).'
+    )
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
     parser.add_argument('--config', type=str, default='cfg/BiFusion_DEMT_DAv2_fullEMA.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()

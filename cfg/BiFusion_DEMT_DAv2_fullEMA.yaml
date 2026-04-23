@@ -5,10 +5,8 @@ model:
   stu_model:
     name: ResNet34U_f
   tea_model:
-    name: ResNet34U_f_ExtendDAv2_BiFusion
+    name: ResNet34U_f_ExtendDAv2
     dav2_model_name: 'depth-anything/Depth-Anything-V2-Small-hf'
-    use_cnn_residual: true
-    bifusion_drop: 0.05
   num_channels_output: 1
 data:
   root: ../polypdepth_dataset/
@@ -89,7 +87,7 @@ Hook:
     meta_info:
       kaggle_run_link:
       dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
-      description: 'Mean Teacher with DAv2 + BiFusion (full EMA on teacher RGB encoder+decoder path)'
+      description: 'Ablation: ResNet34U_f_ExtendDAv2 teacher with full EMA on rgb_encoder+decoder+head in phase 1'
 
 score_criteria: test_stu_Dice
 

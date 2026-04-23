@@ -25,7 +25,7 @@ from utils.loss import MSELoss, WeightedBCEDiceLoss, BCELoss
 
 class BiFusion_DEMT_DAv2_noEMA_Trainer(Trainer):
     """
-    Mean Teacher trainer for BiFusion_DEMT_DAv2_noEMA.
+    Mean Teacher trainer for ablation ``BiFusion_DEMT_DAv2_noEMA`` (expects ``ResNet34U_f_ExtendDAv2`` teacher).
     """
 
     def __init__(self, stu_model, tea_model, train_dataloader, stu_optimizer, tea_optimizer, scheduler, num_epochs, ema_alpha,
@@ -352,7 +352,9 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training without EMA teacher encoder update.')
+    parser = argparse.ArgumentParser(
+        description='Ablation: Mean Teacher with ResNet34U_f_ExtendDAv2 teacher (no phase-1 EMA into teacher).'
+    )
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
     parser.add_argument('--config', type=str, default='cfg/BiFusion_DEMT_DAv2_noEMA.yaml', help='Path to YAML config')
     args, unknown = parser.parse_known_args()
@@ -377,13 +379,13 @@ if __name__ == '__main__':
 
 
 #  !cd /kaggle/working/meanTeacherPolyp && \
-#     python BiFusion_DEMT_DAv2_noEMA.py \
-#                     --optuna_trial_times 0\
-#                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
-#                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
-#                     Hook.ExtendMLFlowLoggerHook.run_name='BiFusion_DEMT_DAv2_noEMA' \
-#                     Hook.ExtendMLFlowLoggerHook.experiment_name='BiFusion_DEMT_DAv2_noEMA' \
-#                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
-#                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
+    # python BiFusion_DEMT_DAv2_noEMA.py \
+    #                 --optuna_trial_times 0\
+    #                 data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
+    #                 data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test \
+    #                 Hook.ExtendMLFlowLoggerHook.run_name='BiFusion_DEMT_DAv2_noEMA' \
+    #                 Hook.ExtendMLFlowLoggerHook.experiment_name='BiFusion_DEMT_DAv2_noEMA' \
+    #                 Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/minhnguyenakiyahere/kagglerunningtemplate/edit?fromFork=1' \
+    #                 Hook.ExtendMLFlowLoggerHook.meta_info.version=1
 
 

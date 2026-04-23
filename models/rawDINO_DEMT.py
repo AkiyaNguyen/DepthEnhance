@@ -1,19 +1,26 @@
-import math
 import importlib
+import math
 from pathlib import Path
-from typing import Dict, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .ResUNet import encoder, DecoderBlock, ConvBlock, BiFusionBlock
+from .ResUNet import (
+    ConvBlock,
+    DecoderBlock,
+    ResNet34U_f_ExtendDAv2,
+    SEFusionBlock,
+    encoder,
+)
 
 
-# Make local Depth-Anything-V2 package importable.
+# Local Depth-Anything-V2 package (DPT head + ViT encoder shell).
 _DEPTH_ANYTHING_ROOT = Path(__file__).resolve().parents[1] / "Depth-Anything-V2"
 if _DEPTH_ANYTHING_ROOT.exists():
     import sys
+
     root_str = str(_DEPTH_ANYTHING_ROOT)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
@@ -23,19 +30,36 @@ DepthAnythingV2 = importlib.import_module("depth_anything_v2.dpt").DepthAnything
 
 class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
     """
-    BiFusion teacher that uses raw DINOv2 weights as transformer encoder source.
+    Same forward path as ``ResNet34U_f_ExtendDAv2`` (proj + SEFusion + U-Net decoder),
+    but the frozen geometric backbone is **raw DINOv2** (torch.hub) remapped into the
+    Depth-Anything-V2 ViT encoder, instead of the HuggingFace Depth-Anything-V2 backbone.
 
-    This class keeps the same interface/attributes used by existing trainer code:
-    - rgb_encoder
-    - dav2_encoder
-    - decoder blocks + outconv
+    Trainer-facing attributes match ``ResNet34U_f_ExtendDAv2``:
+    ``rgb_encoder``, ``dav2_encoder``, ``fusion_block*``, ``decoder*``, ``outconv``.
     """
 
+    # DepthAnythingV2 ``encoder=`` id → DPT stem config (must match local depth_anything_v2).
     _encoder_cfg: Dict[str, Dict[str, object]] = {
-        "vits": {"dav2_dim": 384, "features": 64, "out_channels": [48, 96, 192, 384], "layer_indices": [2, 5, 8, 11], "hub_model": "dinov2_vits14"},
-        "vitb": {"dav2_dim": 768, "features": 128, "out_channels": [96, 192, 384, 768], "layer_indices": [2, 5, 8, 11], "hub_model": "dinov2_vitb14"},
-        "vitl": {"dav2_dim": 1024, "features": 256, "out_channels": [256, 512, 1024, 1024], "layer_indices": [4, 11, 17, 23], "hub_model": "dinov2_vitl14"},
-        "vitg": {"dav2_dim": 1536, "features": 384, "out_channels": [1536, 1536, 1536, 1536], "layer_indices": [9, 19, 29, 39], "hub_model": "dinov2_vitg14"},
+        "vits": {
+            "features": 64,
+            "out_channels": [48, 96, 192, 384],
+            "hub_model": "dinov2_vits14",
+        },
+        "vitb": {
+            "features": 128,
+            "out_channels": [96, 192, 384, 768],
+            "hub_model": "dinov2_vitb14",
+        },
+        "vitl": {
+            "features": 256,
+            "out_channels": [256, 512, 1024, 1024],
+            "hub_model": "dinov2_vitl14",
+        },
+        "vitg": {
+            "features": 384,
+            "out_channels": [1536, 1536, 1536, 1536],
+            "hub_model": "dinov2_vitg14",
+        },
     }
 
     _dav2_to_raw_encoder = {
@@ -48,8 +72,6 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
         num_classes,
         dropout=0.1,
         raw_dino_encoder: str = "vitl",
-        use_cnn_residual: bool = True,
-        bifusion_drop: float = 0.0,
         load_raw_dino: bool = True,
         raw_dino_source: str = "facebookresearch/dinov2",
         raw_dino_model: Optional[str] = None,
@@ -59,60 +81,61 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
     ):
         super().__init__()
 
-        if dav2_model_name in self._dav2_to_raw_encoder:
-            raw_dino_encoder = self._dav2_to_raw_encoder[dav2_model_name]
+        if dav2_model_name is not None and dav2_model_name in self._dav2_to_raw_encoder:
+            raw_dino_encoder = str(self._dav2_to_raw_encoder[dav2_model_name])
         if raw_dino_encoder not in self._encoder_cfg:
-            raise ValueError(f"Invalid raw_dino_encoder={raw_dino_encoder!r}. Allowed: {list(self._encoder_cfg.keys())}")
+            raise ValueError(
+                f"Invalid raw_dino_encoder={raw_dino_encoder!r}. Allowed: {list(self._encoder_cfg.keys())}"
+            )
 
-        cfg = self._encoder_cfg[raw_dino_encoder]
-        self.use_cnn_residual = use_cnn_residual
+        enc_cfg = self._encoder_cfg[raw_dino_encoder]
+
+        if dav2_model_name is not None and dav2_model_name in ResNet34U_f_ExtendDAv2.dav2_choice:
+            fusion_cfg = ResNet34U_f_ExtendDAv2.dav2_choice[dav2_model_name]
+            self.dav2_dim = int(fusion_cfg["dav2_dim"])
+            self.dav2_layer_indices: List[int] = list(fusion_cfg["layer_indices"])
+            self.proj_channels: List[int] = list(fusion_cfg["proj_channels"])
+        else:
+            # Legacy: infer channel width from encoder variant (no HF id).
+            legacy_dim = {k: int(v["out_channels"][-1]) for k, v in self._encoder_cfg.items()}
+            self.dav2_dim = legacy_dim[raw_dino_encoder]
+            n_blocks = {"vits": 12, "vitb": 12, "vitl": 24, "vitg": 40}[raw_dino_encoder]
+            step = max((n_blocks - 1) // 4, 1)
+            self.dav2_layer_indices = [step * i for i in range(4)]
+            self.proj_channels = [512, 256, 128, 64]
 
         self.rgb_encoder = encoder(num_classes=None)
 
         self.raw_dino_encoder = raw_dino_encoder
         self.depth_anything = DepthAnythingV2(
             encoder=raw_dino_encoder,
-            features=int(cfg["features"]),
-            out_channels=list(cfg["out_channels"]),
+            features=int(enc_cfg["features"]),
+            out_channels=list(enc_cfg["out_channels"]),
         )
         self._load_raw_dino_weights(
             load_raw_dino=load_raw_dino,
             raw_dino_source=raw_dino_source,
-            raw_dino_model=raw_dino_model or str(cfg["hub_model"]),
+            raw_dino_model=raw_dino_model or str(enc_cfg["hub_model"]),
             dino_weights_path=dino_weights_path,
         )
 
-        # Keep trainer compatibility with existing freeze path and attribute names.
         self.dav2_encoder = self.depth_anything.pretrained
         if freeze_dino:
             for p in self.dav2_encoder.parameters():
                 p.requires_grad = False
 
-        self.dav2_dim = int(cfg["dav2_dim"])
-        self.dav2_layer_indices = list(cfg["layer_indices"])
+        n_blocks = len(self.dav2_encoder.blocks)
+        self._dino_intermediate_idx = [min(int(i), n_blocks - 1) for i in self.dav2_layer_indices]
 
-        dv2 = self.dav2_dim
-        self.pre_align = nn.ModuleList(
-            [
-                self._make_pre_align(dv2, dv2),
-                self._make_pre_align(dv2, dv2),
-                self._make_pre_align(dv2, dv2),
-                self._make_pre_align(dv2, dv2),
-            ]
-        )
-        self.post_align = nn.ModuleList(
-            [
-                self._make_post_align(dv2, dv2),
-                self._make_post_align(dv2, dv2),
-                self._make_post_align(dv2, dv2),
-                self._make_post_align(dv2, dv2),
-            ]
-        )
+        self.proj5 = self._make_proj(self.dav2_dim, self.proj_channels[0])
+        self.proj4 = self._make_proj(self.dav2_dim, self.proj_channels[1])
+        self.proj3 = self._make_proj(self.dav2_dim, self.proj_channels[2])
+        self.proj2 = self._make_proj(self.dav2_dim, self.proj_channels[3])
 
-        self.fusion_block5 = BiFusionBlock(512, dv2, r_2=16, ch_int=256, ch_out=512, drop_rate=bifusion_drop)
-        self.fusion_block4 = BiFusionBlock(256, dv2, r_2=16, ch_int=128, ch_out=256, drop_rate=bifusion_drop)
-        self.fusion_block3 = BiFusionBlock(128, dv2, r_2=16, ch_int=64, ch_out=128, drop_rate=bifusion_drop)
-        self.fusion_block2 = BiFusionBlock(64, dv2, r_2=8, ch_int=32, ch_out=64, drop_rate=bifusion_drop)
+        self.fusion_block5 = SEFusionBlock(512, self.proj_channels[0], 512)
+        self.fusion_block4 = SEFusionBlock(256, self.proj_channels[1], 256)
+        self.fusion_block3 = SEFusionBlock(128, self.proj_channels[2], 128)
+        self.fusion_block2 = SEFusionBlock(64, self.proj_channels[3], 64)
 
         self.decoder5 = DecoderBlock(512, 512)
         self.decoder4 = DecoderBlock(512 + 256, 256)
@@ -124,6 +147,13 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
             ConvBlock(64, 32, kernel_size=3, stride=1, padding=1),
             nn.Dropout2d(dropout),
             nn.Conv2d(32, num_classes, 1),
+        )
+
+    def _make_proj(self, in_dim, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_dim, out_channels, kernel_size=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
         )
 
     def _load_raw_dino_weights(
@@ -154,18 +184,7 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
             f"missing={len(missing)} unexpected={len(unexpected)}"
         )
 
-    def _make_pre_align(self, in_dim, out_dim):
-        return nn.Sequential(
-            nn.Conv2d(in_dim, in_dim, kernel_size=1),
-            ConvBlock(in_dim, out_dim, kernel_size=3, stride=1, padding=1),
-        )
-
-    def _make_post_align(self, in_dim, out_dim):
-        return ConvBlock(in_dim, out_dim, kernel_size=3, stride=1, padding=1)
-
-    def _extract_dino_features(self, x) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        # DINOv2 patch embed requires H and W divisible by patch size (14 here).
-        # We pad only for the transformer branch; fused features are resized back to CNN scales later.
+    def _extract_raw_dino_features(self, x) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         patch_size = 14
         _, _, h, w = x.shape
         pad_h = (patch_size - (h % patch_size)) % patch_size
@@ -176,7 +195,7 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
         with torch.no_grad():
             hidden_states = self.dav2_encoder.get_intermediate_layers(
                 x,
-                self.dav2_layer_indices,
+                self._dino_intermediate_idx,
                 reshape=False,
                 return_class_token=False,
                 norm=True,
@@ -184,39 +203,37 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
 
         feats = []
         for h in hidden_states:
-            # h: [B, N, D] where N is patch token count.
-            B, N, D = h.shape
-            side = int(math.sqrt(N))
-            if side * side != N:
-                raise ValueError(f"Patch token count {N} is not a perfect square.")
-            h = h.permute(0, 2, 1).reshape(B, D, side, side)
+            b, n, d = h.shape
+            side = int(math.sqrt(n))
+            if side * side != n:
+                raise ValueError(f"Patch token count {n} is not a perfect square.")
+            h = h.permute(0, 2, 1).reshape(b, d, side, side)
             feats.append(h)
         return tuple(feats)
 
-    def forward(self, x, fp=False, feature_layers=1, type='mixed'):
+    def forward(self, x, fp=False, feature_layers=1, type="mixed"):
         e1, e2, e3, e4, e5 = self.rgb_encoder(x)
 
-        dino_feats = self._extract_dino_features(x)
+        dav2_feats = self._extract_raw_dino_features(x)
 
-        def align_stage(stage_idx, feat, target_spatial):
-            y = self.pre_align[stage_idx](feat)
-            y = F.interpolate(y, size=target_spatial, mode="bilinear", align_corners=False)
-            return self.post_align[stage_idx](y)
+        def proj_and_resize(proj_layer, feat, target_feat):
+            out = proj_layer(feat)
+            return F.interpolate(
+                out,
+                size=target_feat.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
 
-        d2 = align_stage(0, dino_feats[0], e2.shape[2:])
-        d3 = align_stage(1, dino_feats[1], e3.shape[2:])
-        d4 = align_stage(2, dino_feats[2], e4.shape[2:])
-        d5 = align_stage(3, dino_feats[3], e5.shape[2:])
+        d2 = proj_and_resize(self.proj2, dav2_feats[0], e2)
+        d3 = proj_and_resize(self.proj3, dav2_feats[1], e3)
+        d4 = proj_and_resize(self.proj4, dav2_feats[2], e4)
+        d5 = proj_and_resize(self.proj5, dav2_feats[3], e5)
 
         f5 = self.fusion_block5(e5, d5)
         f4 = self.fusion_block4(e4, d4)
         f3 = self.fusion_block3(e3, d3)
         f2 = self.fusion_block2(e2, d2)
-        if self.use_cnn_residual:
-            f5 = f5 + e5
-            f4 = f4 + e4
-            f3 = f3 + e3
-            f2 = f2 + e2
 
         dec5 = self.decoder5(f5)
         dec4 = self.decoder4(torch.cat([dec5, f4], dim=1))
@@ -231,13 +248,14 @@ class DEMT_DAv2_Extend_RawDINOv2(nn.Module):
         final_output = torch.sigmoid(out)
 
         if fp:
-            if type == 'decoder':
+            if type == "decoder":
                 return final_output, decoder_fea_layers[feature_layers - 1]
-            elif type == 'rgb_encoder':
+            if type == "rgb_encoder":
                 return final_output, rgb_encoder_fea_layers[feature_layers - 1]
-            elif type == 'mix_encoder':
+            if type == "mix_encoder":
                 return final_output, mix_encoder_fea_layers[feature_layers - 1]
-            else:
-                raise ValueError("Invalid type: choose from 'decoder', 'rgb_encoder', 'mix_encoder'")
+            raise ValueError(
+                f"Invalid type: {type}, allowed types are 'decoder', 'rgb_encoder', 'mix_encoder'"
+            )
 
         return final_output
