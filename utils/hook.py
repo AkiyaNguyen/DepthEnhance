@@ -13,7 +13,7 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
                 meta_info: dict | None = None, dagshub_meta_dir: str = 'meta',
                 local_dir_save_ckpt: str = 'ckpt', dagshub_dir_save_ckpt: str = 'ckpt', max_save_epoch_interval: int = 50, criteria: str = 'test_stu_Dice',
                 dagshub_destination_src_file: str = 'src_file', list_src_dir_files: typing.List[str] | None = None,
-                plot_every_epoch: int = 1,
+                log_every_epoch: int = 1,
                 **kwargs) -> None:
         super().__init__(trainer, **kwargs)
         self.meta_info = meta_info if meta_info is not None else {}
@@ -31,22 +31,9 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
 
         self.dagshub_destination_src_file = dagshub_destination_src_file
         self.list_src_dir_files = list(list_src_dir_files) if list_src_dir_files is not None else []
-        self.plot_every_epoch = max(1, int(plot_every_epoch))
-        self.accumulate_step_for_logging: list[int] = []
-
-    def _metric_value_for_mlflow(self, value: typing.Any) -> float | None:
-        if isinstance(value, (int, float, bool)):
-            return float(value)
-        if isinstance(value, torch.Tensor):
-            try:
-                return float(value.detach().cpu().item())
-            except (ValueError, RuntimeError):
-                return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
+        self.log_every_epoch = max(1, int(log_every_epoch))
+        # Pending (epoch_step, filtered_metrics); flushed in batches to cut MLflow round-trips.
+        self._mlflow_pending: typing.List[typing.Tuple[int, typing.Dict[str, typing.Any]]] = []
     def _log_source_files(self) -> None:  
         for dir_file in self.list_src_dir_files:
             if os.path.isfile(dir_file):
@@ -67,28 +54,30 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
         self._log_source_files()
         self._log_meta_info()
 
-    def log_accumulate_info_to_mlflow(self) -> None:
-        if not self.accumulate_step_for_logging:
-            return
-        info = self.trainer.info_storage.all_info()
-        for step in self.accumulate_step_for_logging:
-            if step < 0 or step >= len(info):
-                continue
-            for key, value in info[step].items():
-                if not self.found_in_logging_fields(key):
-                    continue
-                fv = self._metric_value_for_mlflow(value)
-                if fv is None:
-                    continue
-                mlflow.log_metric(key, fv, step=step)
-        self.accumulate_step_for_logging = []
+    def _enqueue_epoch_metrics_for_mlflow(self) -> None:
+        """Collect metrics like MLFlowLoggerHook.after_train_epoch (same filtering), log later in a batch."""
+        latest = self.trainer.info_storage.latest_info()
+        filtered = {
+            k: v
+            for k, v in latest.items()
+            if self.found_in_logging_fields(k)
+        }
+        self._mlflow_pending.append((self.trainer.current_epoch, filtered))
+
+    def _flush_pending_mlflow_metrics(self) -> None:
+        for epoch_step, metrics in self._mlflow_pending:
+            for key, value in metrics.items():
+                mlflow.log_metric(key, float(value), step=epoch_step)
+        self._mlflow_pending.clear()
 
     def after_train_epoch(self) -> None:
-        self.accumulate_step_for_logging.append(self.trainer.current_epoch)
-
-        should_log = (self.trainer.current_epoch + 1) % self.plot_every_epoch == 0 or (self.trainer.current_epoch + 1) == self.trainer.num_epochs
-        if should_log:
-            self.log_accumulate_info_to_mlflow()
+        self._enqueue_epoch_metrics_for_mlflow()
+        should_flush = (
+            self.trainer.current_epoch % self.log_every_epoch == 0 or \
+            self.trainer.current_epoch == self.trainer.num_epochs - 1
+        )
+        if should_flush:
+            self._flush_pending_mlflow_metrics()
 
         latest = self.trainer.info_storage.latest_info()
         self.patience += 1

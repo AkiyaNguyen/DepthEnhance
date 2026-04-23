@@ -7,6 +7,21 @@ from test.eval import ImageFolderDataset
 from torchvision import transforms
 import json
 
+
+def split_csv_or_list(val):
+    """
+    Normalize config values that may be a YAML list or a comma-separated string.
+    Returns a list of non-empty stripped strings.
+    """
+    if val is None:
+        return []
+    if isinstance(val, (list, tuple)):
+        return [str(x).strip() for x in val if str(x).strip()]
+    if isinstance(val, str):
+        return [p.strip() for p in val.split(",") if p.strip()]
+    return [str(val).strip()]
+
+
 # Helper function to get the number of labeled images
 def _labeled_num(train_num, cfg):
     if cfg.get('data.label_mode') == 'percentage':
@@ -103,15 +118,28 @@ def build_dataset(cfg):
     else:
         raise ValueError("val_perc must be between 0 and 100.")
 
-    test_data = ImageFolderDataset(
-        dataset_root=cfg.get('data.test.dataset_root'),
-        image_dirname=cfg.get('data.test.image_dirname'),
-        mask_dirname=cfg.get('data.test.mask_dirname'),
-        depth_dirname=cfg.get('data.test.depth_dirname', None),
-        transform=val_test_transform, list_name=None)
+    raw_roots = cfg.get('data.test.dataset_root')
+    assert raw_roots is not None, "test.dataset_root is required"
+    test_dataset_roots = split_csv_or_list(raw_roots)
+    assert len(test_dataset_roots) >= 1, "test.dataset_root must not be empty"
 
-    test_dataloader = torch.utils.data.DataLoader(
-        test_data, batch_size=cfg.get('data.test.batch_size'), shuffle=False, num_workers=0)
+    name_list = split_csv_or_list(cfg.get('data.test.dataset_name'))
+    if len(test_dataset_roots) > 1:
+        assert len(name_list) == len(test_dataset_roots), (
+            "data.test.dataset_name must list one name per test set (comma-separated or YAML list), "
+            f"got {len(name_list)} names for {len(test_dataset_roots)} dataset_root entries"
+        )
+
+    test_dataloaders = []
+    for test_dataset_root in test_dataset_roots:
+        test_data = ImageFolderDataset(
+            dataset_root=test_dataset_root,
+            image_dirname=cfg.get('data.test.image_dirname'),
+            mask_dirname=cfg.get('data.test.mask_dirname'),
+            depth_dirname=cfg.get('data.test.depth_dirname', None),
+            transform=val_test_transform, list_name=None)
+        test_dataloaders.append(torch.utils.data.DataLoader(
+            test_data, batch_size=cfg.get('data.test.batch_size'), shuffle=False, num_workers=0))
 
     
-    return train_dataloader, val_dataloader, test_dataloader
+    return train_dataloader, val_dataloader, test_dataloaders

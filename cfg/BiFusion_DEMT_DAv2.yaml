@@ -30,6 +30,7 @@ data:
     resize_width: 320
     resize_height: 320
     dataset_root: ../polypdepth_dataset/TestDataset/Kvasir
+    dataset_name: 
     image_dirname: images
     mask_dirname: masks
     depth_dirname:
@@ -80,6 +81,7 @@ Hook:
     dagshub_dir_save_ckpt: 'ckpt'
     max_save_epoch_interval: 50
     criteria: test_stu_Dice
+    log_every_epoch: 1
     dagshub_destination_src_file: 'src_file'
     list_src_dir_files: ['utils', 'test', 'models', 'data', 'logs', 'BiFusion_DEMT_DAv2.py']
     dagshub_meta_dir: 'meta'
