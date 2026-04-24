@@ -56,7 +56,7 @@ Hook:
     logger_file: logs/supervised.json
   ExtendMLFlowLoggerHook:
     should_use: True
-    plot_every_epoch: 1
+    interactive_plot: false
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
     experiment_name: 'supervised_10pct'

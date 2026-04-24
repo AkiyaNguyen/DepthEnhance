@@ -65,7 +65,7 @@ Hook:
     eval_every_epoch: 2
   ExtendMLFlowLoggerHook:
     should_use: True
-    plot_every_epoch: 1
+    interactive_plot: false
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
     experiment_name: 'bi_fusion_dav2_mt_train'
@@ -81,7 +81,7 @@ Hook:
     dagshub_dir_save_ckpt: 'ckpt'
     max_save_epoch_interval: 50
     criteria: test_stu_Dice
-    log_every_epoch: 1
+    interactive_plot: false
     dagshub_destination_src_file: 'src_file'
     list_src_dir_files: ['utils', 'test', 'models', 'data', 'logs', 'BiFusion_DEMT_DAv2.py']
     dagshub_meta_dir: 'meta'

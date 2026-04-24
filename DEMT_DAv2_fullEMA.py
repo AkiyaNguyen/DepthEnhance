@@ -307,7 +307,6 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     _tm = cfg.get('model.tea_model')
     tea_kwargs = dict(_tm) if isinstance(_tm, dict) else {}
     tea_kwargs.pop('name', None)
-    tea_kwargs.setdefault('dav2_model_name', cfg.get('model.tea_model.dav2_model_name', 'depth-anything/Depth-Anything-V2-Small-hf'))
     tea_model = getattr(models, tea_name)(num_classes=cfg.get('model.num_channels_output'), **tea_kwargs).to(device)
 
     optimizer = torch.optim.SGD(stu_model.parameters(), lr=cfg.get('optimizer.lr'),
@@ -357,7 +356,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
                     dagshub_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_dir_save_ckpt'),
                     max_save_epoch_interval=int(cfg.get('Hook.ExtendMLFlowLoggerHook.max_save_epoch_interval')),
-                    log_every_epoch=int(cfg.get('Hook.ExtendMLFlowLoggerHook.log_every_epoch', 1)),
+                    interactive_plot=bool(cfg.get('Hook.ExtendMLFlowLoggerHook.interactive_plot', False)),
                     criteria=cfg.get('Hook.ExtendMLFlowLoggerHook.criteria'),
                     dagshub_destination_src_file=str(cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_destination_src_file')),
                     list_src_dir_files=list(cfg.get('Hook.ExtendMLFlowLoggerHook.list_src_dir_files')),
