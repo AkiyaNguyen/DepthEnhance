@@ -232,7 +232,7 @@ if __name__ == '__main__':
             print(f"    {key}: {value}")
 
 
-# !cd /kaggle/working/meanTeacherPolyp && \
+# !cd /kaggle/working/DepthEnhance && \
 #     python run_supervised_for_DAv2Fusion.py \
 #                     --optuna_trial_times 4\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \

@@ -253,7 +253,7 @@ if __name__ == '__main__':
 
     print("Training completed!")
 
-# !cd /kaggle/working/meanTeacherPolyp && \
+# !cd /kaggle/working/DepthEnhance && \
 #     python run_supervised_10pct.py \
 #                     --optuna_trial_times 0\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
@@ -264,7 +264,7 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/akiyanguyen/kagglerunningtemplate/edit' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=3
 
-# !cd /kaggle/working/meanTeacherPolyp && \
+# !cd /kaggle/working/DepthEnhance && \
 #     python run_supervised_10pct.py \
 #                     --optuna_trial_times 3\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
@@ -279,7 +279,7 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/akiyanguyen/kagglerunningtemplate/edit' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=3
 
-# !cd /kaggle/working/meanTeacherPolyp && \
+# !cd /kaggle/working/DepthEnhance && \
 #     python run_supervised_10pct.py \
 #                     --optuna_trial_times 3\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \

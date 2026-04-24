@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 
 
-WORKDIR = Path("/kaggle/working/meanTeacherPolyp")
+WORKDIR = Path("/kaggle/working/DepthEnhance")
 SHUFFLE_SCRIPT = WORKDIR / "shuffle_data.py"
 SEED = 42
 

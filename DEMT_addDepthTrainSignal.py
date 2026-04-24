@@ -325,6 +325,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
     #             max_save_epoch_interval=int(cfg.get('Hook.SmartSaveHook.max_save_epoch_interval')), \
     #             save_name=cfg.get('Hook.SmartSaveHook.save_name'), \
     #             criteria=cfg.get('Hook.SmartSaveHook.criteria'))
+    hook_builder(LoggerHook, logger_file='logs/simple.json')
     if cfg.get('Hook.ExtendMLFlowLoggerHook.should_use', True):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
                      dagshub_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_dir_save_ckpt'),
@@ -344,7 +345,6 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
                      run_name=cfg.get('Hook.ExtendMLFlowLoggerHook.run_name'),
                      cfg=cfg,
                      )
-    hook_builder(LoggerHook, logger_file='logs/simple.json')
     # hook_builder(MLFlowLoggerHook, dagshub_repo_owner=str(cfg.get('Hook.MLFlowLoggerHook.dagshub_repo_owner')),
     #              dagshub_repo_name=str(cfg.get('Hook.MLFlowLoggerHook.dagshub_repo_name')),
     #              experiment_name=cfg.get('Hook.MLFlowLoggerHook.experiment_name'),

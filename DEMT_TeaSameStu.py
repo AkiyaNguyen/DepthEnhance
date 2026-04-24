@@ -328,6 +328,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         hook_builder(MeanTeacherEvalHook_DAv2_addDepthTrainSignal, eval_data_loader=test_dataloader,
                      eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix=f'test_{dataset_name}')
 
+    hook_builder(LoggerHook, logger_file='logs/simple.json')
     if cfg.get('Hook.ExtendMLFlowLoggerHook.should_use', True):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
                     dagshub_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_dir_save_ckpt'),
@@ -346,7 +347,6 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
                     run_name=cfg.get('Hook.ExtendMLFlowLoggerHook.run_name'),
                     cfg=cfg,
                     )
-    hook_builder(LoggerHook, logger_file='logs/simple.json')
     # hook_builder(StopTrainAtEpoch, stop_at_epoch=int(cfg.get('Hook.StopTrainAtEpoch.stop_at_epoch')))
 
     trainer.train()
@@ -382,7 +382,7 @@ if __name__ == '__main__':
         for key, value in trial.params.items():
             print(f"    {key}: {value}")
 
-#  !cd /kaggle/working/meanTeacherPolyp && \
+#  !cd /kaggle/working/DepthEnhance && \
 #     python DEMT_DAv2.py \
 #                     --optuna_trial_times 0\
 #                     data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train' \
@@ -393,7 +393,7 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
 
 
-#  !cd /kaggle/working/meanTeacherPolyp && \
+#  !cd /kaggle/working/DepthEnhance && \
 #     python DEMT_DAv2.py \
 #                     --optuna_trial_times 0\
 #                     model.tea_model.dav2_model_name='depth-anything/Depth-Anything-V2-Base-hf' \
@@ -406,7 +406,7 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=1
 
 
-#  !cd /kaggle/working/meanTeacherPolyp && \
+#  !cd /kaggle/working/DepthEnhance && \
 #     python DEMT_DAv2.py \
 #                     --optuna_trial_times 0\
 #                     data.root=../polypDataset_final1/kvasir_SEG data.data2_dir='Train' \

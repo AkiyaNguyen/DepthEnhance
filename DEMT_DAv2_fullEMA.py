@@ -406,3 +406,12 @@ if __name__ == '__main__':
         print("  Params:")
         for key, value in trial.params.items():
             print(f"    {key}: {value}")
+
+# python kaggle_runner.py --acc 0 --branch ablation --cmd "python DEMT_DAv2_fullEMA.py        
+#              --optuna_trial_times 0 data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir='Train'                     data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test  
+#                    Hook.ExtendMLFlowLoggerHook.run_name='DEMT_DAv2_fullEMA'
+#   Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_DAv2_fullEMA'"
+
+
+
+# python DEMT_DAv2.py --optuna_trial_times 0 model.tea_model.name=DEMT_DAv2_Extend_RawDINOv2 model.tea_model.dav2_model_name=depth-anything/Depth-Anything-V2-Small-hf data.root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG data.data2_dir=Train data.test.dataset_root=/kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test Hook.ExtendMLFlowLoggerHook.run_name=DEMT_DAv2_rawDINO Hook.ExtendMLFlowLoggerHook.experiment_name=DEMT_DAv2_rawDINO 
