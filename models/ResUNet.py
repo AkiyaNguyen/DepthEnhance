@@ -139,7 +139,7 @@ class Decoder(nn.Module):
 
 
 class ResNet34U_f(nn.Module):
-    def __init__(self, num_classes, dropout=0.1):
+    def __init__(self, num_classes, dropout=0.1, **kwargs):
         super(ResNet34U_f, self).__init__()
 
         self.encoder1 = encoder(num_classes)
