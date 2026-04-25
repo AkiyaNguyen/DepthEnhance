@@ -1,0 +1,13 @@
+# Kaggle data overrides for CVC_ClinicDB (same layout as kvasir_SEG; uses kvasir_SEG dataset class)
+data:
+  json_filename: datalist_info/official/CVC_ClinicDB_seed_42.json
+  root: /kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/CVC_ClinicDB
+  dataset: kvasir_SEG
+  data2_dir: Train
+  test:
+    dataset_root: /kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/CVC_ClinicDB/Test
+
+Hook:
+  ExtendMLFlowLoggerHook:
+    meta_info:
+      dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset

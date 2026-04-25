@@ -1,0 +1,13 @@
+# Kaggle data overrides for kvasir_SEG (merge after base cfg, e.g. --config cfg/DEMT_DAv2.yaml,cfg/data/kvasir_SEG.yaml)
+data:
+  json_filename: datalist_info/official/kvasir_SEG_seed_42.json
+  root: /kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG
+  dataset: kvasir_SEG
+  data2_dir: Train
+  test:
+    dataset_root: /kaggle/input/datasets/akiyanguyen/polypdataset/polypDataset_final1/kvasir_SEG/Test
+
+Hook:
+  ExtendMLFlowLoggerHook:
+    meta_info:
+      dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset

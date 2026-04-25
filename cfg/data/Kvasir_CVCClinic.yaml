@@ -1,0 +1,16 @@
+# Combined kvasir_SEG + CVC_ClinicDB (official seed-42 list). Train images must live under
+# root/data2_dir/image_dirname (see run_kaggle_shuffled_supervised.py: polypdepth-dataset/TrainDataset).
+# Test roots follow sth.py / DEMT_TeaSameStu multi-dataset style (comma-separated).
+data:
+  json_filename: datalist_info/official/kvasir_SEG_CVC_ClinicDB_seed_42.json
+  dataset: kvasir_SEG
+  root: /kaggle/input/datasets/tonhuynhchi/polyp-depth
+  data2_dir: TrainDataset
+  test:
+    dataset_root: /kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/Kvasir,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/ETIS-LaribPolypDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-ColonDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-ClinicDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-300
+    dataset_name: Kvasir,ETIS-LaribPolypDB,CVC-ColonDB,CVC-ClinicDB,CVC-300
+
+Hook:
+  ExtendMLFlowLoggerHook:
+    meta_info:
+      dataset_link: https://www.kaggle.com/datasets/tonhuynhchi/polyp-depth
