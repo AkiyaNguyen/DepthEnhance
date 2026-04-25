@@ -5,7 +5,7 @@ model:
   stu_model:
     name: ResNet34U_f
   tea_model:
-    name: ResNet34U_f_ExtendDAv2
+    name: ResNet34U_f
     dav2_model_name: 'depth-anything/Depth-Anything-V2-Small-hf'
   num_channels_output: 1
 data:
@@ -16,7 +16,7 @@ data:
   image_dirname: images
   mask_dirname: masks
   depth_dirname: 
-  json_filename: datalist_info/official/kvasir_SEG_seed_42.json
+  json_filename: datalist_info/official/kvasir_SEG_CVC_ClinicDB_seed_42.json
   label_mode: percentage
   labeled_perc: 10
   labeled_bs: 2
@@ -27,10 +27,8 @@ data:
   test:
     resize_width: 320
     resize_height: 320
-    dataset_root: ../polypdepth_dataset/TestDataset/Kvasir
-    image_dirname: images
-    mask_dirname: masks
-    depth_dirname: 
+    dataset_root: /kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/Kvasir,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/ETIS-LaribPolypDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-ColonDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-ClinicDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-300
+    dataset_name: Kvasir,ETIS-LaribPolypDB,CVC-ColonDB,CVC-ClinicDB,CVC-300
     batch_size: 1
 
 nEpoch: 300
@@ -66,7 +64,7 @@ Hook:
     interactive_plot: True
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
-    experiment_name: 'dav2_mt_train_full_ema'
+    experiment_name: 'Ablation'
     dir_save_plot: 'plots'
     logging_fields:
       - '*loss*'
@@ -80,13 +78,13 @@ Hook:
     max_save_epoch_interval: 50
     criteria: test_stu_Dice
     dagshub_destination_src_file: 'src_file'
-    list_src_dir_files: ['utils', 'test', 'models', 'data', 'logs', 'DEMT_DAv2_fullEMA.py']
+    list_src_dir_files: ['utils', 'test', 'models', 'data', 'logs','DEMT_TeaSameStu.py']
     dagshub_meta_dir: 'meta'
     run_name:
     meta_info:
       kaggle_run_link:
-      dataset_link: https://www.kaggle.com/datasets/akiyanguyen/polypdataset
-      description: 'Same as DEMT_DAv2 except phase-1 EMA into teacher rgb_encoder+decoder+head'
+      dataset_link: https://www.kaggle.com/datasets/tonhuynhchi/polyp-depth
+      description: 'Mean Teacher with TeaSameStu teacher training flow'
 
 score_criteria: test_stu_Dice
 

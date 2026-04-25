@@ -394,3 +394,6 @@ if __name__ == '__main__':
 #                     Hook.ExtendMLFlowLoggerHook.experiment_name='DEMT_addDepthTrainSignal' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.kaggle_run_link='https://www.kaggle.com/code/tay208/fork-of-try-mt-nodepth/edit' \
 #                     Hook.ExtendMLFlowLoggerHook.meta_info.version=2
+
+
+#  python kaggle_runner.py --acc 0 --branch try --cmd "python DEMT_DAv2.py --optuna_trial_times 0 data.root=/kaggle/input/datasets/tonhuynhchi/polyp-depth data.data2_dir='TrainDataset' data.test.dataset_root=/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-300,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-ClinicDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/CVC-ColonDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/ETIS-LaribPolypDB,/kaggle/input/datasets/tonhuynhchi/polyp-depth/TestDataset/Kvasir data.test.dataset_name=CVC-300,CVC-ClinicDB,CVC-ColonDB,ETIS-LaribPolypDB,Kvasir Hook.ExtendMLFlowLoggerHook.run_name='EMA_encoder_noDepth__seed_1111' model.tea_model.name=ResNet34U_f Hook.ExtendMLFlowLoggerHook.experiment_name='Ablation' seed=1111 data.json_filename='datalist_info/kvasir_seg_and_cvc_clinic_db.json' Hook.ExtendMLFlowLoggerHook.interative_plot=False"

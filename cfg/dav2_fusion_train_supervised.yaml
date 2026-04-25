@@ -50,7 +50,7 @@ Hook:
     logger_file: logs/dav2_fusion_train_supervised.json
   ExtendMLFlowLoggerHook:
     should_use: True
-    interactive_plot: false
+    interactive_plot: True
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'
     experiment_name: 'dav2_fusion_train_supervised'
