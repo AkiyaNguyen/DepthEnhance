@@ -1,4 +1,5 @@
 from engine.Config import Config, HookBuilder
+from utils.DepthEnhanceConfig import DepthEnhanceConfig
 from engine.Trainer import Trainer
 from engine.Hook import LoggerHook, EvalHook
 from utils.hook import ExtendMLFlowLoggerHook
@@ -386,9 +387,10 @@ if __name__ == '__main__':
         description='DEMT_DAv2 Mean Teacher ablation: full phase-1 EMA into teacher rgb_encoder+decoder+head.'
     )
     parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
-    parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2_fullEMA.yaml', help='Path to YAML config')
+    parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2_fullEMA.yaml',
+                        help='Config path(s): comma-separated; later file overrides on duplicate keys')
     args, unknown = parser.parse_known_args()
-    cfg = Config(config_file=args.config, cli_overrides=unknown)
+    cfg = DepthEnhanceConfig(config_file=args.config, cli_overrides=unknown)
 
     if args.optuna_trial_times == 0:
         score = training(cfg)

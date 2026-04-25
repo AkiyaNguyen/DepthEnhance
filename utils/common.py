@@ -3,7 +3,7 @@ import random
 import numpy as np
 import os
 import sys
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from engine.Config import Config
 import models
@@ -20,6 +20,13 @@ def _main_entry_script_path() -> str | None:
         return None
     path = os.path.abspath(os.path.normpath(path))
     return path if os.path.isfile(path) else None
+
+def parse_config_file_arg(config: str) -> List[str]:
+    """
+    parse config file argument into a list of strings
+    """
+    return [p.strip() for p in config.split(",") if p.strip()]
+
 
 def lr_logging_dict(optimizer: Optional[torch.optim.Optimizer], key: str = 'lr') -> Dict[str, float]:
     """Current LR(s) from an optimizer for Trainer._add_info / loggers."""
