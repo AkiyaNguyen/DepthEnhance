@@ -7,6 +7,7 @@ import mlflow
 import re
 import matplotlib.pyplot as plt
 from engine.Trainer import Trainer
+from utils.common import _main_entry_script_path
 
 
 class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
@@ -15,7 +16,7 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
                 meta_info: dict | None = None, dagshub_meta_dir: str = 'meta',
                 local_dir_save_ckpt: str = 'ckpt', dagshub_dir_save_ckpt: str = 'ckpt', max_save_epoch_interval: int = 50, criteria: str = 'test_stu_Dice',
                 dagshub_destination_src_file: str = 'src_file', list_src_dir_files: typing.List[str] | None = None,
-                interactive_plot: bool = False, dir_save_plot: str = 'plots',
+                interactive_plot: bool = False, dir_save_plot: str = 'plots', log_main_script: bool = True,
                 **kwargs) -> None:
         super().__init__(trainer, **kwargs)
         self.meta_info = meta_info if meta_info is not None else {}
@@ -34,6 +35,7 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
         self.dagshub_destination_src_file = dagshub_destination_src_file
         self.list_src_dir_files = list(list_src_dir_files) if list_src_dir_files is not None else []
 
+        self.log_main_script = log_main_script
         self.interactive_plot = bool(interactive_plot)
         self.dir_save_plot = dir_save_plot
         os.makedirs(self.dir_save_plot, exist_ok=True)
@@ -53,10 +55,19 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
             # MLflow API: second arg is artifact_file (path under run artifacts), not artifact_path
             mlflow.log_dict(self.meta_info, artifact_file=os.path.join(self.dagshub_meta_dir, 'meta_info.json'))
             print(f"Logged meta info to MLflow!")
+    def _log_main_script(self) -> None:
+        if self.log_main_script:
+            main_p = _main_entry_script_path()
+            if main_p:
+                mlflow.log_artifact(main_p, artifact_path=self.dagshub_destination_src_file)
+                print(f"Logged main script: {main_p}")
+            else:
+                print("[WARN] Main script path not available (__main__.__file__ missing); skipped.")
     def before_train(self) -> None:
         super().before_train()
-        self._log_source_files()
         self._log_meta_info()
+        if self.log_main_script:
+            self._log_main_script()
 
     def _plot_epoch_metrics_interactive(self) -> None:
         super().after_train_epoch()
@@ -116,6 +127,7 @@ class ExtendMLFlowLoggerHook(MLFlowLoggerHook):
             self.patience = 0
 
     def after_train(self) -> None:
+        self._log_source_files()
 
         if not self.interactive_plot:
             self._plot_epoch_metrics_then_save()

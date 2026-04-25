@@ -352,6 +352,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
         hook_builder(MeanTeacherEvalHook_DAv2_addDepthTrainSignal, eval_data_loader=test_dataloader,
                      eval_every_epoch=int(cfg.get('Hook.MeanTeacherEvalHook.eval_every_epoch')), prefix=f'test_{dataset_name}')
 
+    hook_builder(LoggerHook, logger_file='logs/simple.json')
     if cfg.get('Hook.ExtendMLFlowLoggerHook.should_use', True):
         hook_builder(ExtendMLFlowLoggerHook, local_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.local_dir_save_ckpt'),
                     dagshub_dir_save_ckpt=cfg.get('Hook.ExtendMLFlowLoggerHook.dagshub_dir_save_ckpt'),
@@ -370,7 +371,6 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
                     run_name=cfg.get('Hook.ExtendMLFlowLoggerHook.run_name'),
                     cfg=cfg,
                     )
-    hook_builder(LoggerHook, logger_file='logs/simple.json')
 
     trainer.train()
 

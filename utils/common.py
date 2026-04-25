@@ -2,11 +2,24 @@ import torch
 import random
 import numpy as np
 import os
+import sys
 from typing import Dict, Optional
 
 from engine.Config import Config
 import models
 
+
+def _main_entry_script_path() -> str | None:
+    """Path of the script started as ``python that.py`` (``__main__.__file__``). None in REPL / ``-c`` / no file."""
+    main = sys.modules.get("__main__")
+    if main is None:
+        return None
+
+    path = getattr(main, "__file__", None)
+    if not path or not isinstance(path, str):
+        return None
+    path = os.path.abspath(os.path.normpath(path))
+    return path if os.path.isfile(path) else None
 
 def lr_logging_dict(optimizer: Optional[torch.optim.Optimizer], key: str = 'lr') -> Dict[str, float]:
     """Current LR(s) from an optimizer for Trainer._add_info / loggers."""
