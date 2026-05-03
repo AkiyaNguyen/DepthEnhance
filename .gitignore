@@ -26,6 +26,7 @@ temp.py
 **/unused/**
 try**
 **.txt
+!requirements.txt
 **.pth
 # Depth-Anything-V2/
 **.zip
@@ -33,3 +34,5 @@ try**
 **.jpg
 **.jpeg
 **.mp4
+
+Depth-Anything-V2/
