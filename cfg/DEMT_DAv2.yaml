@@ -62,7 +62,7 @@ Hook:
   MeanTeacherEvalHook:
     eval_every_epoch: 2
   ExtendMLFlowLoggerHook:
-    should_use: True
+    should_use: False
     interactive_plot: True
     dagshub_repo_owner: 'AkiyaNguyen'
     dagshub_repo_name: 'polyp_segmentation'

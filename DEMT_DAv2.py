@@ -361,7 +361,7 @@ def training(cfg: Config, trial: typing.Optional[optuna.trial.Trial] = None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DAv2 Fusion Mean Teacher training (ResNet34U_f_ExtendDAv2).')
-    parser.add_argument('--optuna_trial_times', type=int, default=4, help='Optuna trials; 0 = no Optuna.')
+    parser.add_argument('--optuna_trial_times', type=int, default=0, help='Optuna trials; 0 = no Optuna.')
     parser.add_argument('--config', type=str, default='cfg/DEMT_DAv2.yaml',
                         help='Config path(s): comma-separated; later file overrides on duplicate keys')
     args, unknown = parser.parse_known_args()
